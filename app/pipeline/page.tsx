@@ -234,6 +234,10 @@ export default function PipelinePage() {
           chosenHook: chosenHook?.text ?? '',
           chosenThumbnailText: chosenThumbnail?.text ?? '',
           chosenTitle: title.text,
+          claimOptions: claims.map((c, i) => `${i + 1}. ${c.claim}`).join('\n').slice(0, 2000),
+          hookOptions: hooks.map((h, i) => `${i + 1}. ${h.text}`).join('\n').slice(0, 2000),
+          thumbnailOptions: thumbnailTexts.map((t, i) => `${i + 1}. ${t.text}`).join('\n').slice(0, 2000),
+          titleOptions: titles.map((t, i) => `${i + 1}. ${t.text}`).join('\n').slice(0, 2000),
         }),
       });
       if (!res.ok) throw new Error(await res.text());
