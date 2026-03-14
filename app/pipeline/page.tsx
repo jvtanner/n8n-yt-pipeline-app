@@ -37,8 +37,10 @@ type Stage =
   | 'script'
   | 'loading-claims'
   | 'select-claim'
-  | 'loading-hook-thumb'
-  | 'select-hook-thumb'
+  | 'loading-hooks'
+  | 'select-hook'
+  | 'loading-thumbnails'
+  | 'select-thumbnail'
   | 'loading-titles'
   | 'select-title'
   | 'saving'
@@ -67,6 +69,26 @@ function SectionHeader({ step, total, title, subtitle }: { step: number; total: 
   );
 }
 
+function SelectionPill({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-start gap-3 rounded-lg border border-zinc-800 bg-zinc-900/50 px-4 py-2.5">
+      <span className="mt-0.5 shrink-0 text-xs font-medium text-orange-500 w-20">{label}</span>
+      <span className="text-sm text-zinc-300 leading-snug">{value}</span>
+    </div>
+  );
+}
+
+function ResultCard({ label, value, highlight }: { label: string; value: string; highlight?: boolean }) {
+  return (
+    <div className={`rounded-xl border px-5 py-4 ${highlight ? 'border-orange-500/40 bg-orange-500/5' : 'border-zinc-800 bg-zinc-900'}`}>
+      <p className="text-xs font-medium text-zinc-600 mb-1">{label}</p>
+      <p className={`text-sm leading-relaxed ${highlight ? 'text-orange-300 font-semibold text-base' : 'text-zinc-200'}`}>
+        {value}
+      </p>
+    </div>
+  );
+}
+
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 export default function PipelinePage() {
@@ -78,10 +100,9 @@ export default function PipelinePage() {
   const [chosenClaim, setChosenClaim] = useState<Claim | null>(null);
 
   const [hooks, setHooks] = useState<Hook[]>([]);
-  const [thumbnailTexts, setThumbnailTexts] = useState<ThumbnailText[]>([]);
-  const [hooksLoaded, setHooksLoaded] = useState(false);
-  const [thumbsLoaded, setThumbsLoaded] = useState(false);
   const [chosenHook, setChosenHook] = useState<Hook | null>(null);
+
+  const [thumbnailTexts, setThumbnailTexts] = useState<ThumbnailText[]>([]);
   const [chosenThumbnail, setChosenThumbnail] = useState<ThumbnailText | null>(null);
 
   const [titles, setTitles] = useState<Title[]>([]);
@@ -115,89 +136,78 @@ export default function PipelinePage() {
 
   const selectClaim = useCallback(async (claim: Claim) => {
     setChosenClaim(claim);
-    setHooksLoaded(false);
-    setThumbsLoaded(false);
-    setStage('loading-hook-thumb');
     setError(null);
-
-    const claimText = claim.claim;
-    const rawIdea = script.trim();
-
-    // Fire hooks and thumbnails in parallel
-    const [hookRes, thumbRes] = await Promise.allSettled([
-      fetch('/api/hook', {
+    setStage('loading-hooks');
+    try {
+      const res = await fetch('/api/hook', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ rawIdea, claim: claimText }),
-      }),
-      fetch('/api/thumbnail', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ rawIdea, claim: claimText, chosenHook: '' }),
-      }),
-    ]);
-
-    let hasError = false;
-
-    if (hookRes.status === 'fulfilled' && hookRes.value.ok) {
-      const d = await hookRes.value.json();
-      setHooks(d.hooks ?? []);
-      setHooksLoaded(true);
-    } else {
-      hasError = true;
-      setError('Failed to generate hooks');
+        body: JSON.stringify({ rawIdea: script.trim(), claim: claim.claim }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      const data = await res.json();
+      const hooksArray: Hook[] = data.hooks ?? [];
+      if (!hooksArray.length) throw new Error('No hooks returned');
+      setHooks(hooksArray);
+      setStage('select-hook');
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Failed to generate hooks');
+      setStage('select-claim');
     }
-
-    if (thumbRes.status === 'fulfilled' && thumbRes.value.ok) {
-      const d = await thumbRes.value.json();
-      setThumbnailTexts(d.thumbnail_texts ?? []);
-      setThumbsLoaded(true);
-    } else {
-      hasError = true;
-      setError((prev) => prev ? prev + ' & thumbnail texts' : 'Failed to generate thumbnail texts');
-    }
-
-    if (!hasError) setStage('select-hook-thumb');
-    else setStage('select-hook-thumb'); // still show what loaded
   }, [script]);
 
-  const maybeLoadTitles = useCallback(async (hook: Hook | null, thumbnail: ThumbnailText | null) => {
-    if (!hook || !thumbnail || !chosenClaim) return;
-    setStage('loading-titles');
+  const selectHook = useCallback(async (hook: Hook) => {
+    setChosenHook(hook);
     setError(null);
+    setStage('loading-thumbnails');
+    try {
+      const res = await fetch('/api/thumbnail', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          rawIdea: script.trim(),
+          claim: chosenClaim!.claim,
+          chosenHook: hook.text,
+        }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      const data = await res.json();
+      const thumbsArray: ThumbnailText[] = data.thumbnail_texts ?? [];
+      if (!thumbsArray.length) throw new Error('No thumbnail texts returned');
+      setThumbnailTexts(thumbsArray);
+      setStage('select-thumbnail');
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Failed to generate thumbnail texts');
+      setStage('select-hook');
+    }
+  }, [script, chosenClaim]);
+
+  const selectThumbnail = useCallback(async (thumb: ThumbnailText) => {
+    setChosenThumbnail(thumb);
+    setError(null);
+    setStage('loading-titles');
     try {
       const res = await fetch('/api/title', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           rawIdea: script.trim(),
-          claim: chosenClaim.claim,
-          chosenHook: hook.text,
-          chosenThumbnailText: thumbnail.text,
+          claim: chosenClaim!.claim,
+          chosenHook: chosenHook!.text,
+          chosenThumbnailText: thumb.text,
         }),
       });
       if (!res.ok) throw new Error(await res.text());
       const data = await res.json();
-      const titlesArray: Title[] = (data.titles ?? []).sort(
-        (a: Title, b: Title) => (a.character_count ?? 0) - (b.character_count ?? 0)
-      );
+      const titlesArray: Title[] = data.titles ?? [];
+      if (!titlesArray.length) throw new Error('No titles returned');
       setTitles(titlesArray);
       setStage('select-title');
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Failed to generate titles');
-      setStage('select-hook-thumb');
+      setStage('select-thumbnail');
     }
-  }, [chosenClaim, script]);
-
-  const selectHook = useCallback((hook: Hook) => {
-    setChosenHook(hook);
-    if (chosenThumbnail) maybeLoadTitles(hook, chosenThumbnail);
-  }, [chosenThumbnail, maybeLoadTitles]);
-
-  const selectThumbnail = useCallback((thumb: ThumbnailText) => {
-    setChosenThumbnail(thumb);
-    if (chosenHook) maybeLoadTitles(chosenHook, thumb);
-  }, [chosenHook, maybeLoadTitles]);
+  }, [script, chosenClaim, chosenHook]);
 
   const selectTitle = useCallback(async (title: Title) => {
     setChosenTitle(title);
@@ -232,10 +242,8 @@ export default function PipelinePage() {
     setClaims([]);
     setChosenClaim(null);
     setHooks([]);
-    setThumbnailTexts([]);
-    setHooksLoaded(false);
-    setThumbsLoaded(false);
     setChosenHook(null);
+    setThumbnailTexts([]);
     setChosenThumbnail(null);
     setTitles([]);
     setChosenTitle(null);
@@ -287,9 +295,7 @@ export default function PipelinePage() {
         )}
 
         {/* ── Stage: Loading Claims ── */}
-        {stage === 'loading-claims' && (
-          <Spinner label="Generating claim options…" />
-        )}
+        {stage === 'loading-claims' && <Spinner label="Generating claim options…" />}
 
         {/* ── Stage: Select Claim ── */}
         {stage === 'select-claim' && (
@@ -316,106 +322,81 @@ export default function PipelinePage() {
           </div>
         )}
 
-        {/* ── Stage: Loading Hook + Thumbnail ── */}
-        {stage === 'loading-hook-thumb' && (
-          <Spinner label="Generating hooks and thumbnail texts in parallel…" />
-        )}
+        {/* ── Stage: Loading Hooks ── */}
+        {stage === 'loading-hooks' && <Spinner label="Generating hook options…" />}
 
-        {/* ── Stage: Select Hook + Thumbnail ── */}
-        {stage === 'select-hook-thumb' && (
-          <div className="flex flex-col gap-12">
-            {/* Selected claim reminder */}
+        {/* ── Stage: Select Hook ── */}
+        {stage === 'select-hook' && (
+          <div>
             {chosenClaim && (
-              <div className="rounded-lg border border-zinc-800 bg-zinc-900/50 px-4 py-3">
+              <div className="mb-6 rounded-lg border border-zinc-800 bg-zinc-900/50 px-4 py-3">
                 <p className="text-xs text-zinc-600">Selected claim</p>
                 <p className="mt-0.5 text-sm text-zinc-300">{chosenClaim.claim}</p>
               </div>
             )}
-
-            {/* Hooks */}
-            <div>
-              <SectionHeader
-                step={3} total={5}
-                title="Select a hook"
-                subtitle="The opening line Josh speaks in the first 10 seconds."
-              />
-              {!hooksLoaded ? (
-                <Spinner label="Loading hooks…" />
-              ) : (
-                <div className="flex flex-col gap-3">
-                  {hooks.map((h, i) => (
-                    <button
-                      key={i}
-                      onClick={() => selectHook(h)}
-                      className={`group rounded-xl border px-5 py-4 text-left transition-all ${
-                        chosenHook?.text === h.text
-                          ? 'border-orange-500 bg-orange-500/10'
-                          : 'border-zinc-800 bg-zinc-900 hover:border-orange-500/60 hover:bg-zinc-800'
-                      }`}
-                    >
-                      <p className="text-sm leading-relaxed text-white">{h.text}</p>
-                      <p className="mt-1 text-xs text-zinc-600">{h.mechanism}</p>
-                    </button>
-                  ))}
-                </div>
-              )}
+            <SectionHeader
+              step={3} total={5}
+              title="Select a hook"
+              subtitle="The opening line Josh speaks in the first 10 seconds."
+            />
+            <div className="flex flex-col gap-3">
+              {hooks.map((h, i) => (
+                <button
+                  key={i}
+                  onClick={() => selectHook(h)}
+                  className="group rounded-xl border border-zinc-800 bg-zinc-900 px-5 py-4 text-left transition-all hover:border-orange-500/60 hover:bg-zinc-800"
+                >
+                  <p className="text-sm leading-relaxed text-white group-hover:text-orange-400">{h.text}</p>
+                  <p className="mt-1 text-xs text-zinc-600">{h.mechanism}</p>
+                </button>
+              ))}
             </div>
+          </div>
+        )}
 
-            {/* Thumbnail Texts */}
-            <div>
-              <SectionHeader
-                step={4} total={5}
-                title="Select thumbnail text"
-                subtitle="2–5 words that appear on the thumbnail image."
-              />
-              {!thumbsLoaded ? (
-                <Spinner label="Loading thumbnail texts…" />
-              ) : (
-                <div className="grid grid-cols-2 gap-3">
-                  {thumbnailTexts.map((t, i) => (
-                    <button
-                      key={i}
-                      onClick={() => selectThumbnail(t)}
-                      className={`group rounded-xl border px-5 py-4 text-left transition-all ${
-                        chosenThumbnail?.text === t.text
-                          ? 'border-orange-500 bg-orange-500/10'
-                          : 'border-zinc-800 bg-zinc-900 hover:border-orange-500/60 hover:bg-zinc-800'
-                      }`}
-                    >
-                      <p className="text-base font-semibold uppercase tracking-wide text-white">
-                        {t.text}
-                      </p>
-                      <p className="mt-1 text-xs text-zinc-600">{t.visual_concept}</p>
-                    </button>
-                  ))}
-                </div>
-              )}
+        {/* ── Stage: Loading Thumbnails ── */}
+        {stage === 'loading-thumbnails' && <Spinner label="Generating thumbnail text options…" />}
+
+        {/* ── Stage: Select Thumbnail ── */}
+        {stage === 'select-thumbnail' && (
+          <div>
+            <div className="mb-6 space-y-2">
+              <SelectionPill label="Claim" value={chosenClaim?.claim ?? ''} />
+              <SelectionPill label="Hook" value={chosenHook?.text ?? ''} />
             </div>
-
-            {/* Status hint when both not yet selected */}
-            {hooksLoaded && thumbsLoaded && (!chosenHook || !chosenThumbnail) && (
-              <p className="text-center text-xs text-zinc-600">
-                Select both a hook and thumbnail text to continue →
-              </p>
-            )}
+            <SectionHeader
+              step={4} total={5}
+              title="Select thumbnail text"
+              subtitle="2–5 words that appear on the thumbnail image."
+            />
+            <div className="grid grid-cols-2 gap-3">
+              {thumbnailTexts.map((t, i) => (
+                <button
+                  key={i}
+                  onClick={() => selectThumbnail(t)}
+                  className="group rounded-xl border border-zinc-800 bg-zinc-900 px-5 py-4 text-left transition-all hover:border-orange-500/60 hover:bg-zinc-800"
+                >
+                  <p className="text-base font-semibold uppercase tracking-wide text-white group-hover:text-orange-400">
+                    {t.text}
+                  </p>
+                  <p className="mt-1 text-xs text-zinc-600">{t.visual_concept}</p>
+                </button>
+              ))}
+            </div>
           </div>
         )}
 
         {/* ── Stage: Loading Titles ── */}
-        {stage === 'loading-titles' && (
-          <Spinner label="Generating title options…" />
-        )}
+        {stage === 'loading-titles' && <Spinner label="Generating title options…" />}
 
         {/* ── Stage: Select Title ── */}
         {stage === 'select-title' && (
           <div>
-            {/* Selections so far */}
             <div className="mb-8 space-y-2">
               <SelectionPill label="Claim" value={chosenClaim?.claim ?? ''} />
               <SelectionPill label="Hook" value={chosenHook?.text ?? ''} />
               <SelectionPill label="Thumbnail" value={chosenThumbnail?.text ?? ''} />
             </div>
-
             <SectionHeader
               step={5} total={5}
               title="Select a title"
@@ -428,9 +409,7 @@ export default function PipelinePage() {
                   onClick={() => selectTitle(t)}
                   className="group rounded-xl border border-zinc-800 bg-zinc-900 px-5 py-4 text-left transition-all hover:border-orange-500/60 hover:bg-zinc-800"
                 >
-                  <p className="text-sm font-medium text-white group-hover:text-orange-400">
-                    {t.text}
-                  </p>
+                  <p className="text-sm font-medium text-white group-hover:text-orange-400">{t.text}</p>
                   <div className="mt-1 flex items-center gap-3">
                     <span className="text-xs text-zinc-600">{t.character_count} chars</span>
                     <span className="text-xs text-zinc-700">·</span>
@@ -443,17 +422,13 @@ export default function PipelinePage() {
         )}
 
         {/* ── Stage: Saving ── */}
-        {stage === 'saving' && (
-          <Spinner label="Saving to Notion…" />
-        )}
+        {stage === 'saving' && <Spinner label="Saving to Notion…" />}
 
         {/* ── Stage: Done ── */}
         {stage === 'done' && (
           <div>
             <div className="mb-8">
-              <p className="mb-1 text-xs font-medium uppercase tracking-widest text-orange-500">
-                Complete
-              </p>
+              <p className="mb-1 text-xs font-medium uppercase tracking-widest text-orange-500">Complete</p>
               <h2 className="text-2xl font-semibold text-white">Pipeline done</h2>
               {notionUrl && (
                 <a
@@ -466,14 +441,12 @@ export default function PipelinePage() {
                 </a>
               )}
             </div>
-
             <div className="space-y-4">
               <ResultCard label="Claim" value={chosenClaim?.claim ?? ''} />
               <ResultCard label="Hook" value={chosenHook?.text ?? ''} />
               <ResultCard label="Thumbnail Text" value={chosenThumbnail?.text ?? ''} />
               <ResultCard label="Title" value={chosenTitle?.text ?? ''} highlight />
             </div>
-
             <button
               onClick={reset}
               className="mt-10 rounded-lg border border-zinc-800 px-6 py-3 text-sm text-zinc-400 transition-all hover:border-zinc-600 hover:text-white"
@@ -482,29 +455,8 @@ export default function PipelinePage() {
             </button>
           </div>
         )}
+
       </div>
-    </div>
-  );
-}
-
-// ─── Small sub-components ─────────────────────────────────────────────────────
-
-function SelectionPill({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="flex items-start gap-3 rounded-lg border border-zinc-800 bg-zinc-900/50 px-4 py-2.5">
-      <span className="mt-0.5 shrink-0 text-xs font-medium text-orange-500 w-20">{label}</span>
-      <span className="text-sm text-zinc-300 leading-snug">{value}</span>
-    </div>
-  );
-}
-
-function ResultCard({ label, value, highlight }: { label: string; value: string; highlight?: boolean }) {
-  return (
-    <div className={`rounded-xl border px-5 py-4 ${highlight ? 'border-orange-500/40 bg-orange-500/5' : 'border-zinc-800 bg-zinc-900'}`}>
-      <p className="text-xs font-medium text-zinc-600 mb-1">{label}</p>
-      <p className={`text-sm leading-relaxed ${highlight ? 'text-orange-300 font-semibold text-base' : 'text-zinc-200'}`}>
-        {value}
-      </p>
     </div>
   );
 }
