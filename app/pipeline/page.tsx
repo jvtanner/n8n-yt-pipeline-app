@@ -89,6 +89,17 @@ function ResultCard({ label, value, highlight }: { label: string; value: string;
   );
 }
 
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+async function fetchWithRetry(url: string, options: RequestInit, retries = 2): Promise<Response> {
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    const res = await fetch(url, options);
+    if (res.ok || res.status < 500 || attempt === retries) return res;
+    await new Promise(r => setTimeout(r, 1000 * attempt));
+  }
+  return fetch(url, options);
+}
+
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 export default function PipelinePage() {
@@ -117,7 +128,7 @@ export default function PipelinePage() {
     setError(null);
     setStage('loading-claims');
     try {
-      const res = await fetch('/api/claim', {
+      const res = await fetchWithRetry('/api/claim', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ rawIdea: script.trim() }),
@@ -139,7 +150,7 @@ export default function PipelinePage() {
     setError(null);
     setStage('loading-hooks');
     try {
-      const res = await fetch('/api/hook', {
+      const res = await fetchWithRetry('/api/hook', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ rawIdea: script.trim(), claim: claim.claim }),
@@ -161,7 +172,7 @@ export default function PipelinePage() {
     setError(null);
     setStage('loading-thumbnails');
     try {
-      const res = await fetch('/api/thumbnail', {
+      const res = await fetchWithRetry('/api/thumbnail', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -187,7 +198,7 @@ export default function PipelinePage() {
     setError(null);
     setStage('loading-titles');
     try {
-      const res = await fetch('/api/title', {
+      const res = await fetchWithRetry('/api/title', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -214,7 +225,7 @@ export default function PipelinePage() {
     setStage('saving');
     setError(null);
     try {
-      const res = await fetch('/api/save', {
+      const res = await fetchWithRetry('/api/save', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
