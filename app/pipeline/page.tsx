@@ -248,7 +248,7 @@ export default function PipelinePage() {
       setError(e instanceof Error ? e.message : 'Failed to save to Notion');
       setStage('select-title');
     }
-  }, [script, chosenClaim, chosenHook, chosenThumbnail]);
+  }, [script, chosenClaim, chosenHook, chosenThumbnail, titles]);
 
   const reset = useCallback(() => {
     setStage('script');
