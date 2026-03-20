@@ -92,7 +92,7 @@ function CheckIcon({ className }: { className?: string }) {
 
 const ICONS = [LightbulbIcon, MagnifyingGlassIcon, PencilIcon, TrophyIcon];
 
-export default function TensionTriangleProgress({ stage }: { stage: PipelineStage }) {
+export default function TensionTriangleProgress({ stage, isComplete = false }: { stage: PipelineStage; isComplete?: boolean }) {
   const [elapsed, setElapsed] = useState(0);
   const timings = TIMINGS[stage];
   const descriptions = DESCRIPTIONS[stage];
@@ -103,6 +103,7 @@ export default function TensionTriangleProgress({ stage }: { stage: PipelineStag
   }, []);
 
   function getStatus(index: number): NodeStatus {
+    if (isComplete) return 'complete';
     const nextAt = index < 3 ? timings[index + 1] : Infinity;
     if (elapsed < timings[index]) return 'pending';
     if (elapsed < nextAt) return 'active';
@@ -110,6 +111,7 @@ export default function TensionTriangleProgress({ stage }: { stage: PipelineStag
   }
 
   function connectorPct(index: number): number {
+    if (isComplete) return 100;
     const start = timings[index];
     const end = timings[index + 1];
     if (elapsed <= start) return 0;

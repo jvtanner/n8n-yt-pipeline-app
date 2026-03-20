@@ -98,6 +98,16 @@ function ResultCard({ label, value, highlight }: { label: string; value: string;
   );
 }
 
+function BriefField({ label, value }: { label: string; value?: string }) {
+  if (!value) return null;
+  return (
+    <div className="text-xs">
+      <span className="text-zinc-600 font-medium">{label}</span>
+      <p className="text-zinc-400 mt-0.5">{value}</p>
+    </div>
+  );
+}
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 async function fetchWithRetry(url: string, options: RequestInit, retries = 2): Promise<Response> {
@@ -132,6 +142,8 @@ export default function PipelinePage() {
   const [chosenTitle, setChosenTitle] = useState<Title | null>(null);
 
   const [notionUrl, setNotionUrl] = useState<string | null>(null);
+  const [pipelineComplete, setPipelineComplete] = useState<'claim' | 'hook' | 'thumbnail' | 'title' | null>(null);
+  const [expandedBriefId, setExpandedBriefId] = useState<string | null>(null);
 
   // ── API calls ────────────────────────────────────────────────────────────
 
@@ -139,6 +151,7 @@ export default function PipelinePage() {
     if (!script.trim()) return;
     setError(null);
     setStage('loading-claims');
+    setPipelineComplete(null);
     try {
       const res = await fetchWithRetry(`${N8N_BASE}/yt-claim-gen`, {
         method: 'POST',
@@ -150,10 +163,14 @@ export default function PipelinePage() {
       const claimsArray: Claim[] = data.claims ?? [];
       if (!claimsArray.length) throw new Error('No claims returned');
       setClaims(claimsArray);
+      setPipelineComplete('claim');
+      await new Promise(r => setTimeout(r, 700));
       setStage('select-claim');
+      setPipelineComplete(null);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Failed to generate claims');
       setStage('script');
+      setPipelineComplete(null);
     }
   }, [script]);
 
@@ -161,6 +178,7 @@ export default function PipelinePage() {
     setChosenClaim(claim);
     setError(null);
     setStage('loading-hooks');
+    setPipelineComplete(null);
     try {
       const res = await fetchWithRetry(`${N8N_BASE}/yt-hook-gen`, {
         method: 'POST',
@@ -180,10 +198,14 @@ export default function PipelinePage() {
       const hooksArray: Hook[] = data.hooks ?? [];
       if (!hooksArray.length) throw new Error('No hooks returned');
       setHooks(hooksArray);
+      setPipelineComplete('hook');
+      await new Promise(r => setTimeout(r, 700));
       setStage('select-hook');
+      setPipelineComplete(null);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Failed to generate hooks');
       setStage('select-claim');
+      setPipelineComplete(null);
     }
   }, [script]);
 
@@ -191,6 +213,7 @@ export default function PipelinePage() {
     setChosenHook(hook);
     setError(null);
     setStage('loading-thumbnails');
+    setPipelineComplete(null);
     try {
       const res = await fetchWithRetry(`${N8N_BASE}/yt-thumbnail-gen`, {
         method: 'POST',
@@ -211,10 +234,14 @@ export default function PipelinePage() {
       const thumbsArray: ThumbnailText[] = data.thumbnail_texts ?? [];
       if (!thumbsArray.length) throw new Error('No thumbnail texts returned');
       setThumbnailTexts(thumbsArray);
+      setPipelineComplete('thumbnail');
+      await new Promise(r => setTimeout(r, 700));
       setStage('select-thumbnail');
+      setPipelineComplete(null);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Failed to generate thumbnail texts');
       setStage('select-hook');
+      setPipelineComplete(null);
     }
   }, [script, chosenClaim]);
 
@@ -222,6 +249,7 @@ export default function PipelinePage() {
     setChosenThumbnail(thumb);
     setError(null);
     setStage('loading-titles');
+    setPipelineComplete(null);
     try {
       const res = await fetchWithRetry(`${N8N_BASE}/yt-title-gen`, {
         method: 'POST',
@@ -243,10 +271,14 @@ export default function PipelinePage() {
       const titlesArray: Title[] = data.titles ?? [];
       if (!titlesArray.length) throw new Error('No titles returned');
       setTitles(titlesArray);
+      setPipelineComplete('title');
+      await new Promise(r => setTimeout(r, 700));
       setStage('select-title');
+      setPipelineComplete(null);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Failed to generate titles');
       setStage('select-thumbnail');
+      setPipelineComplete(null);
     }
   }, [script, chosenClaim, chosenHook]);
 
@@ -298,6 +330,8 @@ export default function PipelinePage() {
     setTitles([]);
     setChosenTitle(null);
     setNotionUrl(null);
+    setPipelineComplete(null);
+    setExpandedBriefId(null);
   }, []);
 
   // ── Render ───────────────────────────────────────────────────────────────
@@ -345,7 +379,7 @@ export default function PipelinePage() {
         )}
 
         {/* ── Stage: Loading Claims ── */}
-        {stage === 'loading-claims' && <TensionTriangleProgress stage="claim" />}
+        {stage === 'loading-claims' && <TensionTriangleProgress stage="claim" isComplete={pipelineComplete === 'claim'} />}
 
         {/* ── Stage: Select Claim ── */}
         {stage === 'select-claim' && (
@@ -356,37 +390,58 @@ export default function PipelinePage() {
               subtitle="Pick the angle that best captures what this video argues."
             />
             <div className="flex flex-col gap-3">
-              {claims.map((c) => (
-                <button
-                  key={c.id}
-                  onClick={() => selectClaim(c)}
-                  className="group rounded-xl border border-zinc-800 bg-zinc-900 px-5 py-4 text-left transition-all hover:border-orange-500/60 hover:bg-zinc-800"
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <p className="text-sm font-medium leading-relaxed text-white group-hover:text-orange-400">
-                      {c.claim}
-                    </p>
-                    {c.video_format && (
-                      <span className="shrink-0 rounded-full bg-orange-500/10 px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-orange-400 border border-orange-500/20">
-                        {c.video_format}
-                      </span>
+              {claims.map((c) => {
+                const isExpanded = expandedBriefId === c.id;
+                return (
+                  <div
+                    key={c.id}
+                    className="rounded-xl border border-zinc-800 bg-zinc-900 px-5 py-4 transition-all hover:border-orange-500/60 hover:bg-zinc-800"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <p className="text-sm font-medium leading-relaxed text-white">
+                        {c.claim}
+                      </p>
+                      {c.video_format && (
+                        <span className="shrink-0 rounded-full bg-orange-500/10 px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-orange-400 border border-orange-500/20">
+                          {c.video_format}
+                        </span>
+                      )}
+                    </div>
+                    <p className="mt-1 text-xs text-zinc-600">{c.angle}</p>
+
+                    {isExpanded && (
+                      <div className="mt-3 pt-3 border-t border-zinc-800 space-y-2">
+                        <BriefField label="Target audience" value={c.target_audience} />
+                        <BriefField label="Pain point" value={c.pain_point} />
+                        <BriefField label="Promise" value={c.promise_structure} />
+                        <BriefField label="Viewer transformation" value={c.viewer_transformation} />
+                        <BriefField label="Why this brief" value={c.whyThisIsTheBrief} />
+                      </div>
                     )}
+
+                    <div className="mt-3 flex items-center justify-between">
+                      <button
+                        onClick={() => setExpandedBriefId(isExpanded ? null : c.id)}
+                        className="text-xs text-zinc-500 hover:text-zinc-300 transition-colors"
+                      >
+                        {isExpanded ? 'Hide brief ▴' : 'Show brief ▾'}
+                      </button>
+                      <button
+                        onClick={() => selectClaim(c)}
+                        className="rounded-lg bg-orange-500/10 px-4 py-1.5 text-xs font-medium text-orange-400 border border-orange-500/20 hover:bg-orange-500/20 transition-all"
+                      >
+                        Select →
+                      </button>
+                    </div>
                   </div>
-                  <p className="mt-1 text-xs text-zinc-600">{c.angle}</p>
-                  {c.pain_point && (
-                    <p className="mt-2 text-xs text-zinc-500"><span className="text-zinc-600 font-medium">Pain point:</span> {c.pain_point}</p>
-                  )}
-                  {c.promise_structure && (
-                    <p className="mt-0.5 text-xs text-zinc-500"><span className="text-zinc-600 font-medium">Promise:</span> {c.promise_structure}</p>
-                  )}
-                </button>
-              ))}
+                );
+              })}
             </div>
           </div>
         )}
 
         {/* ── Stage: Loading Hooks ── */}
-        {stage === 'loading-hooks' && <TensionTriangleProgress stage="hook" />}
+        {stage === 'loading-hooks' && <TensionTriangleProgress stage="hook" isComplete={pipelineComplete === 'hook'} />}
 
         {/* ── Stage: Select Hook ── */}
         {stage === 'select-hook' && (
@@ -430,7 +485,7 @@ export default function PipelinePage() {
         )}
 
         {/* ── Stage: Loading Thumbnails ── */}
-        {stage === 'loading-thumbnails' && <TensionTriangleProgress stage="thumbnail" />}
+        {stage === 'loading-thumbnails' && <TensionTriangleProgress stage="thumbnail" isComplete={pipelineComplete === 'thumbnail'} />}
 
         {/* ── Stage: Select Thumbnail ── */}
         {stage === 'select-thumbnail' && (
@@ -474,7 +529,7 @@ export default function PipelinePage() {
         )}
 
         {/* ── Stage: Loading Titles ── */}
-        {stage === 'loading-titles' && <TensionTriangleProgress stage="title" />}
+        {stage === 'loading-titles' && <TensionTriangleProgress stage="title" isComplete={pipelineComplete === 'title'} />}
 
         {/* ── Stage: Select Title ── */}
         {stage === 'select-title' && (
@@ -542,14 +597,47 @@ export default function PipelinePage() {
             </div>
             <div className="space-y-4">
               <ResultCard label="Claim" value={chosenClaim?.claim ?? ''} />
-              {chosenClaim?.video_format && (
-                <div className="flex items-center gap-3 px-1">
-                  <span className="rounded-full bg-orange-500/10 px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-orange-400 border border-orange-500/20">
-                    {chosenClaim.video_format}
-                  </span>
-                  {chosenClaim.pain_point && (
-                    <span className="text-xs text-zinc-500">{chosenClaim.pain_point}</span>
-                  )}
+              {chosenClaim && (
+                <div className="rounded-xl border border-zinc-800 bg-zinc-900 px-5 py-4">
+                  <p className="text-xs font-medium text-zinc-600 mb-3">Video Brief</p>
+                  <div className="grid grid-cols-2 gap-x-6 gap-y-3">
+                    {chosenClaim.video_format && (
+                      <div className="text-xs">
+                        <span className="text-zinc-600 font-medium">Format</span>
+                        <p className="text-zinc-300 mt-0.5">{chosenClaim.video_format}</p>
+                      </div>
+                    )}
+                    {chosenClaim.target_audience && (
+                      <div className="text-xs">
+                        <span className="text-zinc-600 font-medium">Target audience</span>
+                        <p className="text-zinc-300 mt-0.5">{chosenClaim.target_audience}</p>
+                      </div>
+                    )}
+                    {chosenClaim.pain_point && (
+                      <div className="text-xs">
+                        <span className="text-zinc-600 font-medium">Pain point</span>
+                        <p className="text-zinc-300 mt-0.5">{chosenClaim.pain_point}</p>
+                      </div>
+                    )}
+                    {chosenClaim.promise_structure && (
+                      <div className="text-xs">
+                        <span className="text-zinc-600 font-medium">Promise</span>
+                        <p className="text-zinc-300 mt-0.5">{chosenClaim.promise_structure}</p>
+                      </div>
+                    )}
+                    {chosenClaim.viewer_transformation && (
+                      <div className="text-xs col-span-2">
+                        <span className="text-zinc-600 font-medium">Viewer transformation</span>
+                        <p className="text-zinc-300 mt-0.5">{chosenClaim.viewer_transformation}</p>
+                      </div>
+                    )}
+                    {chosenClaim.angle && (
+                      <div className="text-xs col-span-2">
+                        <span className="text-zinc-600 font-medium">Angle</span>
+                        <p className="text-zinc-300 mt-0.5">{chosenClaim.angle}</p>
+                      </div>
+                    )}
+                  </div>
                 </div>
               )}
               <ResultCard label="Hook" value={chosenHook?.text ?? ''} />
