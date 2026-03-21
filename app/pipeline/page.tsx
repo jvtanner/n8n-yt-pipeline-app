@@ -42,12 +42,21 @@ interface Title {
   thumbnail_complement: string;
 }
 
+interface Intro {
+  id: string;
+  text: string;
+  credibility_angle: string;
+  why_this_works: string;
+}
+
 type Stage =
   | 'script'
   | 'loading-claims'
   | 'select-claim'
   | 'loading-hooks'
   | 'select-hook'
+  | 'loading-intros'
+  | 'select-intro'
   | 'loading-thumbnails'
   | 'select-thumbnail'
   | 'loading-titles'
@@ -141,6 +150,9 @@ export default function PipelinePage() {
   const [titles, setTitles] = useState<Title[]>([]);
   const [chosenTitle, setChosenTitle] = useState<Title | null>(null);
 
+  const [intros, setIntros] = useState<Intro[]>([]);
+  const [chosenIntro, setChosenIntro] = useState<Intro | null>(null);
+
   const [notionUrl, setNotionUrl] = useState<string | null>(null);
   const [pipelineComplete, setPipelineComplete] = useState<'claim' | 'hook' | 'thumbnail' | 'title' | null>(null);
   const [expandedBriefId, setExpandedBriefId] = useState<string | null>(null);
@@ -212,6 +224,35 @@ export default function PipelinePage() {
   const selectHook = useCallback(async (hook: Hook) => {
     setChosenHook(hook);
     setError(null);
+    setStage('loading-intros');
+    try {
+      const res = await fetchWithRetry(`${N8N_BASE}/yt-intro-gen`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          rawIdea: script.trim(),
+          claim: chosenClaim!.claim,
+          chosenHook: hook.text,
+          target_audience: chosenClaim!.target_audience || '',
+          pain_point: chosenClaim!.pain_point || '',
+          video_format: chosenClaim!.video_format || '',
+        }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      const data = await res.json();
+      const introsArray: Intro[] = data.intros ?? [];
+      if (!introsArray.length) throw new Error('No intros returned');
+      setIntros(introsArray);
+      setStage('select-intro');
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Failed to generate intros');
+      setStage('select-hook');
+    }
+  }, [script, chosenClaim]);
+
+  const selectIntro = useCallback(async (intro: Intro) => {
+    setChosenIntro(intro);
+    setError(null);
     setStage('loading-thumbnails');
     setPipelineComplete(null);
     try {
@@ -221,7 +262,7 @@ export default function PipelinePage() {
         body: JSON.stringify({
           rawIdea: script.trim(),
           claim: chosenClaim!.claim,
-          chosenHook: hook.text,
+          chosenHook: chosenHook!.text,
           target_audience: chosenClaim!.target_audience || '',
           pain_point: chosenClaim!.pain_point || '',
           video_format: chosenClaim!.video_format || '',
@@ -240,10 +281,46 @@ export default function PipelinePage() {
       setPipelineComplete(null);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Failed to generate thumbnail texts');
-      setStage('select-hook');
+      setStage('select-intro');
       setPipelineComplete(null);
     }
-  }, [script, chosenClaim]);
+  }, [script, chosenClaim, chosenHook]);
+
+  const skipIntro = useCallback(async () => {
+    setChosenIntro(null);
+    setError(null);
+    setStage('loading-thumbnails');
+    setPipelineComplete(null);
+    try {
+      const res = await fetchWithRetry(`${N8N_BASE}/yt-thumbnail-gen`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          rawIdea: script.trim(),
+          claim: chosenClaim!.claim,
+          chosenHook: chosenHook!.text,
+          target_audience: chosenClaim!.target_audience || '',
+          pain_point: chosenClaim!.pain_point || '',
+          video_format: chosenClaim!.video_format || '',
+          promise_structure: chosenClaim!.promise_structure || '',
+          viewer_transformation: chosenClaim!.viewer_transformation || '',
+        }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      const data = await res.json();
+      const thumbsArray: ThumbnailText[] = data.thumbnail_texts ?? [];
+      if (!thumbsArray.length) throw new Error('No thumbnail texts returned');
+      setThumbnailTexts(thumbsArray);
+      setPipelineComplete('thumbnail');
+      await new Promise(r => setTimeout(r, 700));
+      setStage('select-thumbnail');
+      setPipelineComplete(null);
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Failed to generate thumbnail texts');
+      setStage('select-intro');
+      setPipelineComplete(null);
+    }
+  }, [script, chosenClaim, chosenHook]);
 
   const selectThumbnail = useCallback(async (thumb: ThumbnailText) => {
     setChosenThumbnail(thumb);
@@ -294,6 +371,8 @@ export default function PipelinePage() {
           rawIdea: script.trim(),
           chosenClaim: chosenClaim?.claim ?? '',
           chosenHook: chosenHook?.text ?? '',
+          chosenIntro: chosenIntro?.text ?? '',
+          chosenIntroAngle: chosenIntro?.credibility_angle ?? '',
           chosenThumbnailText: chosenThumbnail?.text ?? '',
           chosenTitle: title.text,
           claimOptions: claims.map((c, i) => `${i + 1}. ${c.claim}`).join('\n').slice(0, 2000),
@@ -329,6 +408,8 @@ export default function PipelinePage() {
     setChosenThumbnail(null);
     setTitles([]);
     setChosenTitle(null);
+    setIntros([]);
+    setChosenIntro(null);
     setNotionUrl(null);
     setPipelineComplete(null);
     setExpandedBriefId(null);
@@ -343,7 +424,7 @@ export default function PipelinePage() {
         {/* Header */}
         <div className="mb-12">
           <h1 className="text-lg font-semibold tracking-tight text-white">YT Pipeline</h1>
-          <p className="text-sm text-zinc-600">claim · hook · thumbnail · title</p>
+          <p className="text-sm text-zinc-600">claim · hook · intro · thumbnail · title</p>
         </div>
 
         {/* Error banner */}
@@ -357,7 +438,7 @@ export default function PipelinePage() {
         {stage === 'script' && (
           <div>
             <SectionHeader
-              step={1} total={5}
+              step={1} total={6}
               title="Paste your script"
               subtitle="The full transcript or draft script for this video."
             />
@@ -385,7 +466,7 @@ export default function PipelinePage() {
         {stage === 'select-claim' && (
           <div>
             <SectionHeader
-              step={2} total={5}
+              step={2} total={6}
               title="Select the core claim"
               subtitle="Pick the angle that best captures what this video argues."
             />
@@ -465,7 +546,7 @@ export default function PipelinePage() {
               </div>
             )}
             <SectionHeader
-              step={3} total={5}
+              step={3} total={6}
               title="Select a hook"
               subtitle="The opening line Josh speaks in the first 10 seconds."
             />
@@ -484,6 +565,54 @@ export default function PipelinePage() {
           </div>
         )}
 
+        {/* ── Stage: Loading Intros ── */}
+        {stage === 'loading-intros' && <Spinner label="Generating intro suggestions…" />}
+
+        {/* ── Stage: Select Intro ── */}
+        {stage === 'select-intro' && (
+          <div>
+            <div className="mb-6 space-y-2">
+              <SelectionPill label="Claim" value={chosenClaim?.claim ?? ''} />
+              <SelectionPill label="Hook" value={chosenHook?.text ?? ''} />
+            </div>
+            <SectionHeader
+              step={4} total={6}
+              title="Select an intro"
+              subtitle="How Josh establishes credibility for this specific topic. Optional — skip if none fit."
+            />
+            <div className="flex flex-col gap-3">
+              {intros.map((intro) => (
+                <div
+                  key={intro.id}
+                  className="rounded-xl border border-zinc-800 bg-zinc-900 px-5 py-4 transition-all hover:border-orange-500/60 hover:bg-zinc-800"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <p className="text-sm leading-relaxed text-white">{intro.text}</p>
+                    <span className="shrink-0 rounded-full bg-orange-500/10 px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-orange-400 border border-orange-500/20">
+                      {intro.credibility_angle}
+                    </span>
+                  </div>
+                  <p className="mt-1 text-xs text-zinc-600">{intro.why_this_works}</p>
+                  <div className="mt-3 flex justify-end">
+                    <button
+                      onClick={() => selectIntro(intro)}
+                      className="rounded-lg bg-orange-500/10 px-4 py-1.5 text-xs font-medium text-orange-400 border border-orange-500/20 hover:bg-orange-500/20 transition-all"
+                    >
+                      Select →
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <button
+              onClick={skipIntro}
+              className="mt-4 text-sm text-zinc-500 hover:text-zinc-300 transition-colors"
+            >
+              Skip intro →
+            </button>
+          </div>
+        )}
+
         {/* ── Stage: Loading Thumbnails ── */}
         {stage === 'loading-thumbnails' && <TensionTriangleProgress stage="thumbnail" isComplete={pipelineComplete === 'thumbnail'} />}
 
@@ -493,6 +622,7 @@ export default function PipelinePage() {
             <div className="mb-6 space-y-2">
               <SelectionPill label="Claim" value={chosenClaim?.claim ?? ''} />
               <SelectionPill label="Hook" value={chosenHook?.text ?? ''} />
+              {chosenIntro && <SelectionPill label="Intro" value={chosenIntro.text} />}
               {(chosenClaim?.video_format || chosenClaim?.pain_point) && (
                 <div className="flex items-center gap-2 px-1 pt-1">
                   {chosenClaim?.video_format && (
@@ -507,7 +637,7 @@ export default function PipelinePage() {
               )}
             </div>
             <SectionHeader
-              step={4} total={5}
+              step={5} total={6}
               title="Select thumbnail text"
               subtitle="2–5 words that appear on the thumbnail image."
             />
@@ -538,6 +668,7 @@ export default function PipelinePage() {
               <SelectionPill label="Claim" value={chosenClaim?.claim ?? ''} />
               <SelectionPill label="Hook" value={chosenHook?.text ?? ''} />
               <SelectionPill label="Thumbnail" value={chosenThumbnail?.text ?? ''} />
+              {chosenIntro && <SelectionPill label="Intro" value={chosenIntro.text} />}
               {(chosenClaim?.video_format || chosenClaim?.pain_point) && (
                 <div className="flex items-center gap-2 px-1 pt-1">
                   {chosenClaim?.video_format && (
@@ -552,7 +683,7 @@ export default function PipelinePage() {
               )}
             </div>
             <SectionHeader
-              step={5} total={5}
+              step={6} total={6}
               title="Select a title"
               subtitle="All titles are under 60 characters. Pick the best one."
             />
@@ -641,6 +772,17 @@ export default function PipelinePage() {
                 </div>
               )}
               <ResultCard label="Hook" value={chosenHook?.text ?? ''} />
+              {chosenIntro && (
+                <div className="rounded-xl border border-zinc-800 bg-zinc-900 px-5 py-4">
+                  <div className="flex items-start justify-between gap-3 mb-1">
+                    <p className="text-xs font-medium text-zinc-600">Intro</p>
+                    <span className="shrink-0 rounded-full bg-orange-500/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-orange-400 border border-orange-500/20">
+                      {chosenIntro.credibility_angle}
+                    </span>
+                  </div>
+                  <p className="text-sm leading-relaxed text-zinc-200">{chosenIntro.text}</p>
+                </div>
+              )}
               <ResultCard label="Thumbnail Text" value={chosenThumbnail?.text ?? ''} />
               <ResultCard label="Title" value={chosenTitle?.text ?? ''} highlight />
             </div>
