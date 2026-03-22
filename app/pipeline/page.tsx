@@ -5,6 +5,14 @@ import TensionTriangleProgress from './TensionTriangleProgress';
 
 const N8N_BASE = process.env.NEXT_PUBLIC_N8N_WEBHOOK_BASE_URL;
 
+const WORKFLOW_IDS: Record<string, string> = {
+  'yt-claim-gen': 'uCBzCUOuMC5lKW8R',
+  'yt-hook-gen': 'mrhxcmny0K52ftcv',
+  'yt-intro-gen': 'eOGpGx2A7qc2AFYq',
+  'yt-thumbnail-gen': 'XjKDQq34UP92tUJG',
+  'yt-title-gen': '8SFhgEtcea30bqgu',
+};
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 interface Claim {
@@ -119,16 +127,64 @@ function BriefField({ label, value }: { label: string; value?: string }) {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-async function fetchWithRetry(url: string, options: RequestInit, retries = 2): Promise<Response> {
+async function pollForResult(
+  workflowId: string,
+  startedAfter: string,
+  timeoutMs = 300000,
+): Promise<Record<string, unknown>> {
+  const deadline = Date.now() + timeoutMs;
+  // Wait before first poll so the execution has time to appear in the API
+  await new Promise(r => setTimeout(r, 8000));
+
+  while (Date.now() < deadline) {
+    const res = await fetch(
+      `/api/poll?workflowId=${workflowId}&startedAfter=${encodeURIComponent(startedAfter)}`,
+    );
+    if (!res.ok) throw new Error('Poll request failed');
+    const result = await res.json();
+
+    if (result.status === 'complete') return result.data;
+    if (result.status === 'error') throw new Error(result.message || 'Execution failed');
+
+    // 'waiting' or 'running' — keep polling
+    await new Promise(r => setTimeout(r, 5000));
+  }
+
+  throw new Error('Pipeline timed out — please try again');
+}
+
+async function fetchWithPolling(
+  endpoint: string,
+  body: Record<string, unknown>,
+): Promise<Record<string, unknown>> {
   if (!N8N_BASE) {
     throw new Error('N8N webhook URL not configured. Set NEXT_PUBLIC_N8N_WEBHOOK_BASE_URL.');
   }
-  for (let attempt = 0; attempt <= retries; attempt++) {
-    const res = await fetch(url, options);
-    if (res.ok || res.status < 500 || attempt === retries) return res;
-    await new Promise(r => setTimeout(r, 1000 * attempt));
-  }
-  return fetch(url, options);
+
+  const workflowId = WORKFLOW_IDS[endpoint];
+  const startedAfter = new Date().toISOString();
+
+  // Fire the webhook request (triggers the n8n execution)
+  const directPromise: Promise<Record<string, unknown>> = fetch(`${N8N_BASE}/${endpoint}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  }).then(async (res) => {
+    if (res.ok) return res.json();
+    // On Cloudflare 524 or proxy timeout, return a never-resolving promise
+    // so polling can win via Promise.any()
+    if (res.status === 524 || res.status === 502 || res.status === 504) {
+      return new Promise<Record<string, unknown>>(() => {});
+    }
+    throw new Error(await res.text());
+  });
+
+  // If no workflow ID mapping (e.g., save-to-notion), use direct only
+  if (!workflowId) return directPromise;
+
+  // Race: direct response vs. polling fallback
+  const pollingPromise = pollForResult(workflowId, startedAfter);
+  return Promise.any([directPromise, pollingPromise]);
 }
 
 // ─── Main Component ───────────────────────────────────────────────────────────
@@ -165,14 +221,8 @@ export default function PipelinePage() {
     setStage('loading-claims');
     setPipelineComplete(null);
     try {
-      const res = await fetchWithRetry(`${N8N_BASE}/yt-claim-gen`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ rawIdea: script.trim() }),
-      });
-      if (!res.ok) throw new Error(await res.text());
-      const data = await res.json();
-      const claimsArray: Claim[] = data.claims ?? [];
+      const data = await fetchWithPolling('yt-claim-gen', { rawIdea: script.trim() });
+      const claimsArray: Claim[] = (data.claims as Claim[]) ?? [];
       if (!claimsArray.length) throw new Error('No claims returned');
       setClaims(claimsArray);
       setPipelineComplete('claim');
@@ -192,22 +242,16 @@ export default function PipelinePage() {
     setStage('loading-hooks');
     setPipelineComplete(null);
     try {
-      const res = await fetchWithRetry(`${N8N_BASE}/yt-hook-gen`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          rawIdea: script.trim(),
-          claim: claim.claim,
-          target_audience: claim.target_audience || '',
-          pain_point: claim.pain_point || '',
-          video_format: claim.video_format || '',
-          promise_structure: claim.promise_structure || '',
-          viewer_transformation: claim.viewer_transformation || '',
-        }),
+      const data = await fetchWithPolling('yt-hook-gen', {
+        rawIdea: script.trim(),
+        claim: claim.claim,
+        target_audience: claim.target_audience || '',
+        pain_point: claim.pain_point || '',
+        video_format: claim.video_format || '',
+        promise_structure: claim.promise_structure || '',
+        viewer_transformation: claim.viewer_transformation || '',
       });
-      if (!res.ok) throw new Error(await res.text());
-      const data = await res.json();
-      const hooksArray: Hook[] = data.hooks ?? [];
+      const hooksArray: Hook[] = (data.hooks as Hook[]) ?? [];
       if (!hooksArray.length) throw new Error('No hooks returned');
       setHooks(hooksArray);
       setPipelineComplete('hook');
@@ -226,21 +270,15 @@ export default function PipelinePage() {
     setError(null);
     setStage('loading-intros');
     try {
-      const res = await fetchWithRetry(`${N8N_BASE}/yt-intro-gen`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          rawIdea: script.trim(),
-          claim: chosenClaim!.claim,
-          chosenHook: hook.text,
-          target_audience: chosenClaim!.target_audience || '',
-          pain_point: chosenClaim!.pain_point || '',
-          video_format: chosenClaim!.video_format || '',
-        }),
+      const data = await fetchWithPolling('yt-intro-gen', {
+        rawIdea: script.trim(),
+        claim: chosenClaim!.claim,
+        chosenHook: hook.text,
+        target_audience: chosenClaim!.target_audience || '',
+        pain_point: chosenClaim!.pain_point || '',
+        video_format: chosenClaim!.video_format || '',
       });
-      if (!res.ok) throw new Error(await res.text());
-      const data = await res.json();
-      const introsArray: Intro[] = data.intros ?? [];
+      const introsArray: Intro[] = (data.intros as Intro[]) ?? [];
       if (!introsArray.length) throw new Error('No intros returned');
       setIntros(introsArray);
       setStage('select-intro');
@@ -256,23 +294,17 @@ export default function PipelinePage() {
     setStage('loading-thumbnails');
     setPipelineComplete(null);
     try {
-      const res = await fetchWithRetry(`${N8N_BASE}/yt-thumbnail-gen`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          rawIdea: script.trim(),
-          claim: chosenClaim!.claim,
-          chosenHook: chosenHook!.text,
-          target_audience: chosenClaim!.target_audience || '',
-          pain_point: chosenClaim!.pain_point || '',
-          video_format: chosenClaim!.video_format || '',
-          promise_structure: chosenClaim!.promise_structure || '',
-          viewer_transformation: chosenClaim!.viewer_transformation || '',
-        }),
+      const data = await fetchWithPolling('yt-thumbnail-gen', {
+        rawIdea: script.trim(),
+        claim: chosenClaim!.claim,
+        chosenHook: chosenHook!.text,
+        target_audience: chosenClaim!.target_audience || '',
+        pain_point: chosenClaim!.pain_point || '',
+        video_format: chosenClaim!.video_format || '',
+        promise_structure: chosenClaim!.promise_structure || '',
+        viewer_transformation: chosenClaim!.viewer_transformation || '',
       });
-      if (!res.ok) throw new Error(await res.text());
-      const data = await res.json();
-      const thumbsArray: ThumbnailText[] = data.thumbnail_texts ?? [];
+      const thumbsArray: ThumbnailText[] = (data.thumbnail_texts as ThumbnailText[]) ?? [];
       if (!thumbsArray.length) throw new Error('No thumbnail texts returned');
       setThumbnailTexts(thumbsArray);
       setPipelineComplete('thumbnail');
@@ -292,23 +324,17 @@ export default function PipelinePage() {
     setStage('loading-thumbnails');
     setPipelineComplete(null);
     try {
-      const res = await fetchWithRetry(`${N8N_BASE}/yt-thumbnail-gen`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          rawIdea: script.trim(),
-          claim: chosenClaim!.claim,
-          chosenHook: chosenHook!.text,
-          target_audience: chosenClaim!.target_audience || '',
-          pain_point: chosenClaim!.pain_point || '',
-          video_format: chosenClaim!.video_format || '',
-          promise_structure: chosenClaim!.promise_structure || '',
-          viewer_transformation: chosenClaim!.viewer_transformation || '',
-        }),
+      const data = await fetchWithPolling('yt-thumbnail-gen', {
+        rawIdea: script.trim(),
+        claim: chosenClaim!.claim,
+        chosenHook: chosenHook!.text,
+        target_audience: chosenClaim!.target_audience || '',
+        pain_point: chosenClaim!.pain_point || '',
+        video_format: chosenClaim!.video_format || '',
+        promise_structure: chosenClaim!.promise_structure || '',
+        viewer_transformation: chosenClaim!.viewer_transformation || '',
       });
-      if (!res.ok) throw new Error(await res.text());
-      const data = await res.json();
-      const thumbsArray: ThumbnailText[] = data.thumbnail_texts ?? [];
+      const thumbsArray: ThumbnailText[] = (data.thumbnail_texts as ThumbnailText[]) ?? [];
       if (!thumbsArray.length) throw new Error('No thumbnail texts returned');
       setThumbnailTexts(thumbsArray);
       setPipelineComplete('thumbnail');
@@ -328,24 +354,18 @@ export default function PipelinePage() {
     setStage('loading-titles');
     setPipelineComplete(null);
     try {
-      const res = await fetchWithRetry(`${N8N_BASE}/yt-title-gen`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          rawIdea: script.trim(),
-          claim: chosenClaim!.claim,
-          chosenHook: chosenHook!.text,
-          chosenThumbnailText: thumb.text,
-          target_audience: chosenClaim!.target_audience || '',
-          pain_point: chosenClaim!.pain_point || '',
-          video_format: chosenClaim!.video_format || '',
-          promise_structure: chosenClaim!.promise_structure || '',
-          viewer_transformation: chosenClaim!.viewer_transformation || '',
-        }),
+      const data = await fetchWithPolling('yt-title-gen', {
+        rawIdea: script.trim(),
+        claim: chosenClaim!.claim,
+        chosenHook: chosenHook!.text,
+        chosenThumbnailText: thumb.text,
+        target_audience: chosenClaim!.target_audience || '',
+        pain_point: chosenClaim!.pain_point || '',
+        video_format: chosenClaim!.video_format || '',
+        promise_structure: chosenClaim!.promise_structure || '',
+        viewer_transformation: chosenClaim!.viewer_transformation || '',
       });
-      if (!res.ok) throw new Error(await res.text());
-      const data = await res.json();
-      const titlesArray: Title[] = data.titles ?? [];
+      const titlesArray: Title[] = (data.titles as Title[]) ?? [];
       if (!titlesArray.length) throw new Error('No titles returned');
       setTitles(titlesArray);
       setPipelineComplete('title');
@@ -364,31 +384,25 @@ export default function PipelinePage() {
     setStage('saving');
     setError(null);
     try {
-      const res = await fetchWithRetry(`${N8N_BASE}/yt-save-to-notion`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          rawIdea: script.trim(),
-          chosenClaim: chosenClaim?.claim ?? '',
-          chosenHook: chosenHook?.text ?? '',
-          chosenIntro: chosenIntro?.text ?? '',
-          chosenIntroAngle: chosenIntro?.credibility_angle ?? '',
-          chosenThumbnailText: chosenThumbnail?.text ?? '',
-          chosenTitle: title.text,
-          claimOptions: claims.map((c, i) => `${i + 1}. ${c.claim}`).join('\n').slice(0, 2000),
-          hookOptions: hooks.map((h, i) => `${i + 1}. ${h.text}`).join('\n').slice(0, 2000),
-          thumbnailOptions: thumbnailTexts.map((t, i) => `${i + 1}. ${t.text}`).join('\n').slice(0, 2000),
-          titleOptions: titles.map((t, i) => `${i + 1}. ${t.text}`).join('\n').slice(0, 2000),
-          target_audience: chosenClaim?.target_audience ?? '',
-          pain_point: chosenClaim?.pain_point ?? '',
-          video_format: chosenClaim?.video_format ?? '',
-          promise_structure: chosenClaim?.promise_structure ?? '',
-          viewer_transformation: chosenClaim?.viewer_transformation ?? '',
-        }),
+      const data = await fetchWithPolling('yt-save-to-notion', {
+        rawIdea: script.trim(),
+        chosenClaim: chosenClaim?.claim ?? '',
+        chosenHook: chosenHook?.text ?? '',
+        chosenIntro: chosenIntro?.text ?? '',
+        chosenIntroAngle: chosenIntro?.credibility_angle ?? '',
+        chosenThumbnailText: chosenThumbnail?.text ?? '',
+        chosenTitle: title.text,
+        claimOptions: claims.map((c, i) => `${i + 1}. ${c.claim}`).join('\n').slice(0, 2000),
+        hookOptions: hooks.map((h, i) => `${i + 1}. ${h.text}`).join('\n').slice(0, 2000),
+        thumbnailOptions: thumbnailTexts.map((t, i) => `${i + 1}. ${t.text}`).join('\n').slice(0, 2000),
+        titleOptions: titles.map((t, i) => `${i + 1}. ${t.text}`).join('\n').slice(0, 2000),
+        target_audience: chosenClaim?.target_audience ?? '',
+        pain_point: chosenClaim?.pain_point ?? '',
+        video_format: chosenClaim?.video_format ?? '',
+        promise_structure: chosenClaim?.promise_structure ?? '',
+        viewer_transformation: chosenClaim?.viewer_transformation ?? '',
       });
-      if (!res.ok) throw new Error(await res.text());
-      const data = await res.json();
-      setNotionUrl(data.notionUrl ?? null);
+      setNotionUrl((data.notionUrl as string) ?? null);
       setStage('done');
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Failed to save to Notion');
