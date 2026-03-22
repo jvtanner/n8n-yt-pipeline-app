@@ -3,7 +3,7 @@
 import { useState, useCallback } from 'react';
 import TensionTriangleProgress from './TensionTriangleProgress';
 
-// Calls routed through Next.js API routes to avoid Cloudflare proxy timeout
+const N8N_BASE = process.env.NEXT_PUBLIC_N8N_WEBHOOK_BASE_URL;
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -120,6 +120,9 @@ function BriefField({ label, value }: { label: string; value?: string }) {
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 async function fetchWithRetry(url: string, options: RequestInit, retries = 2): Promise<Response> {
+  if (!N8N_BASE) {
+    throw new Error('N8N webhook URL not configured. Set NEXT_PUBLIC_N8N_WEBHOOK_BASE_URL.');
+  }
   for (let attempt = 0; attempt <= retries; attempt++) {
     const res = await fetch(url, options);
     if (res.ok || res.status < 500 || attempt === retries) return res;
@@ -162,7 +165,7 @@ export default function PipelinePage() {
     setStage('loading-claims');
     setPipelineComplete(null);
     try {
-      const res = await fetchWithRetry(`/api/claim`, {
+      const res = await fetchWithRetry(`${N8N_BASE}/yt-claim-gen`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ rawIdea: script.trim() }),
@@ -189,7 +192,7 @@ export default function PipelinePage() {
     setStage('loading-hooks');
     setPipelineComplete(null);
     try {
-      const res = await fetchWithRetry(`/api/hook`, {
+      const res = await fetchWithRetry(`${N8N_BASE}/yt-hook-gen`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -223,7 +226,7 @@ export default function PipelinePage() {
     setError(null);
     setStage('loading-intros');
     try {
-      const res = await fetchWithRetry(`/api/intro`, {
+      const res = await fetchWithRetry(`${N8N_BASE}/yt-intro-gen`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -253,7 +256,7 @@ export default function PipelinePage() {
     setStage('loading-thumbnails');
     setPipelineComplete(null);
     try {
-      const res = await fetchWithRetry(`/api/thumbnail`, {
+      const res = await fetchWithRetry(`${N8N_BASE}/yt-thumbnail-gen`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -289,7 +292,7 @@ export default function PipelinePage() {
     setStage('loading-thumbnails');
     setPipelineComplete(null);
     try {
-      const res = await fetchWithRetry(`/api/thumbnail`, {
+      const res = await fetchWithRetry(`${N8N_BASE}/yt-thumbnail-gen`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -325,7 +328,7 @@ export default function PipelinePage() {
     setStage('loading-titles');
     setPipelineComplete(null);
     try {
-      const res = await fetchWithRetry(`/api/title`, {
+      const res = await fetchWithRetry(`${N8N_BASE}/yt-title-gen`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -361,7 +364,7 @@ export default function PipelinePage() {
     setStage('saving');
     setError(null);
     try {
-      const res = await fetchWithRetry(`/api/save-to-notion`, {
+      const res = await fetchWithRetry(`${N8N_BASE}/yt-save-to-notion`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
