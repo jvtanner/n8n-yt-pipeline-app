@@ -649,6 +649,13 @@ export default function PipelinePage() {
 
   const reset = useCallback(() => {
     clearSession();
+    // Re-check paywall gate after completing a run
+    const freeRunUsed = localStorage.getItem('ytPipelineFreeRunUsed') === 'true';
+    const hasCode = !!localStorage.getItem('ytPipelineAccessCode');
+    if (freeRunUsed && !hasCode) {
+      setNeedsCode(true);
+      return; // Don't reset to script — show the gate
+    }
     setStage('script');
     setScript('');
     setError(null);
