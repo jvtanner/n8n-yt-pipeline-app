@@ -208,7 +208,7 @@ export default function Home() {
             onClick={() => router.push('/pipeline')}
             className="rounded-lg bg-orange-500 px-8 py-3 text-sm font-semibold text-white transition-all hover:bg-orange-400"
           >
-            Start pipeline
+            Create Brief
           </button>
           <button
             onClick={() => {

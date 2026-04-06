@@ -751,6 +751,8 @@ export default function PipelinePage() {
       if (data.valid) {
         localStorage.setItem('ytPipelineAccessCode', codeInput.trim());
         setNeedsCode(false);
+        // Go to home page so user starts fresh
+        router.push('/');
       } else {
         setCodeError('Invalid code. Please try again.');
       }
