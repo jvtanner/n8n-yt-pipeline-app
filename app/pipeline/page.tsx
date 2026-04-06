@@ -1,16 +1,23 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import TensionTriangleProgress from './TensionTriangleProgress';
+import { saveRun } from '@/lib/history';
+import { saveSession, loadSession, clearSession } from '@/lib/session';
+import VoiceProfileSideQuest from '@/components/VoiceProfileSideQuest';
+import ThumbnailImageStudio from '@/components/ThumbnailImageStudio';
 
 const N8N_BASE = process.env.NEXT_PUBLIC_N8N_WEBHOOK_BASE_URL;
 
 const WORKFLOW_IDS: Record<string, string> = {
-  'yt-claim-gen': 'uCBzCUOuMC5lKW8R',
-  'yt-hook-gen': 'mrhxcmny0K52ftcv',
-  'yt-intro-gen': 'eOGpGx2A7qc2AFYq',
-  'yt-thumbnail-gen': 'XjKDQq34UP92tUJG',
-  'yt-title-gen': '8SFhgEtcea30bqgu',
+  'yt-claim-gen': process.env.NEXT_PUBLIC_WF_CLAIM_GEN || 'uCBzCUOuMC5lKW8R',
+  'yt-hook-gen': process.env.NEXT_PUBLIC_WF_HOOK_GEN || 'mrhxcmny0K52ftcv',
+  'yt-intro-gen': process.env.NEXT_PUBLIC_WF_INTRO_GEN || 'eOGpGx2A7qc2AFYq',
+  'yt-thumbnail-gen': process.env.NEXT_PUBLIC_WF_THUMBNAIL_GEN || 'XjKDQq34UP92tUJG',
+  'yt-title-gen': process.env.NEXT_PUBLIC_WF_TITLE_GEN || '8SFhgEtcea30bqgu',
+  'yt-thumbnail-image-gen': process.env.NEXT_PUBLIC_WF_THUMBNAIL_IMAGE_GEN || 'nTA0DgdesN7hsoUy',
+  'yt-save-to-notion-v2': 'Qry3Z7ixCjnQZ8wJ',
 };
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -67,6 +74,7 @@ type Stage =
   | 'select-intro'
   | 'loading-thumbnails'
   | 'select-thumbnail'
+  | 'thumbnail-image'
   | 'loading-titles'
   | 'select-title'
   | 'saving'
@@ -122,6 +130,21 @@ function BriefField({ label, value }: { label: string; value?: string }) {
       <span className="text-zinc-600 font-medium">{label}</span>
       <p className="text-zinc-400 mt-0.5">{value}</p>
     </div>
+  );
+}
+
+function PencilButton({ active, onClick }: { active: boolean; onClick: () => void }) {
+  return (
+    <button
+      onClick={(e) => { e.stopPropagation(); onClick(); }}
+      className={`shrink-0 p-1 rounded transition-colors ${active ? 'text-orange-400' : 'text-zinc-600 hover:text-zinc-400'}`}
+      title="Edit text"
+    >
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+        <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+      </svg>
+    </button>
   );
 }
 
@@ -190,9 +213,37 @@ async function fetchWithPolling(
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 export default function PipelinePage() {
+  const router = useRouter();
+  const [creatorName, setCreatorName] = useState('');
   const [stage, setStage] = useState<Stage>('script');
   const [script, setScript] = useState('');
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const name = localStorage.getItem('ytPipelineCreator');
+    if (!name) { router.replace('/'); return; }
+    setCreatorName(name);
+    setHasProfile(!!localStorage.getItem('ytPipelineProfile:' + name));
+    setSideQuestDismissed(!!localStorage.getItem('ytPipelineSideQuestDismissed'));
+
+    // Restore session if one exists
+    const savedSession = loadSession();
+    if (savedSession) {
+      setStage(savedSession.stage as Stage);
+      setScript(savedSession.script);
+      setClaims(savedSession.claims as Claim[]);
+      setChosenClaim(savedSession.chosenClaim as Claim | null);
+      setHooks(savedSession.hooks as Hook[]);
+      setChosenHook(savedSession.chosenHook as Hook | null);
+      setIntros(savedSession.intros as Intro[]);
+      setChosenIntro(savedSession.chosenIntro as Intro | null);
+      setThumbnailTexts(savedSession.thumbnailTexts as ThumbnailText[]);
+      setChosenThumbnail(savedSession.chosenThumbnail as ThumbnailText | null);
+      setThumbnailImageUrl(savedSession.thumbnailImageUrl);
+      setTitles(savedSession.titles as Title[]);
+      setChosenTitle(savedSession.chosenTitle as Title | null);
+    }
+  }, [router]);
 
   const [claims, setClaims] = useState<Claim[]>([]);
   const [chosenClaim, setChosenClaim] = useState<Claim | null>(null);
@@ -202,6 +253,7 @@ export default function PipelinePage() {
 
   const [thumbnailTexts, setThumbnailTexts] = useState<ThumbnailText[]>([]);
   const [chosenThumbnail, setChosenThumbnail] = useState<ThumbnailText | null>(null);
+  const [thumbnailImageUrl, setThumbnailImageUrl] = useState<string | null>(null);
 
   const [titles, setTitles] = useState<Title[]>([]);
   const [chosenTitle, setChosenTitle] = useState<Title | null>(null);
@@ -213,6 +265,49 @@ export default function PipelinePage() {
   const [pipelineComplete, setPipelineComplete] = useState<'claim' | 'hook' | 'thumbnail' | 'title' | null>(null);
   const [expandedBriefId, setExpandedBriefId] = useState<string | null>(null);
 
+  // ── Inline edit state ────────────────────────────────────────────────────
+  const [editedTexts, setEditedTexts] = useState<Record<string, string>>({});
+  const [editingId, setEditingId] = useState<string | null>(null);
+
+  // ── Credential input state ───────────────────────────────────────────────
+  const [newCredential, setNewCredential] = useState('');
+  const [credentialSaving, setCredentialSaving] = useState(false);
+  const [credentialSaved, setCredentialSaved] = useState(false);
+  const [showCredentialInput, setShowCredentialInput] = useState(false);
+  const [hasProfile, setHasProfile] = useState(false);
+  const [sideQuestDismissed, setSideQuestDismissed] = useState(false);
+
+  useEffect(() => {
+    if (stage === 'script' && !script) return; // Don't save empty initial state
+    saveSession({
+      stage, script, creatorName,
+      claims, chosenClaim,
+      hooks, chosenHook,
+      intros, chosenIntro,
+      thumbnailTexts, chosenThumbnail, thumbnailImageUrl,
+      titles, chosenTitle,
+    });
+  }, [stage, script, creatorName, claims, chosenClaim, hooks, chosenHook, intros, chosenIntro, thumbnailTexts, chosenThumbnail, thumbnailImageUrl, titles, chosenTitle]);
+
+  const toggleEdit = (id: string, originalText: string) => {
+    if (editingId === id) {
+      setEditingId(null);
+    } else {
+      setEditingId(id);
+      if (!(id in editedTexts)) {
+        setEditedTexts(prev => ({ ...prev, [id]: originalText }));
+      }
+    }
+  };
+
+  const updateEditedText = (id: string, text: string) => {
+    setEditedTexts(prev => ({ ...prev, [id]: text }));
+  };
+
+  const getDisplayText = (id: string, originalText: string) => {
+    return editedTexts[id] ?? originalText;
+  };
+
   // ── API calls ────────────────────────────────────────────────────────────
 
   const generateClaims = useCallback(async () => {
@@ -221,7 +316,7 @@ export default function PipelinePage() {
     setStage('loading-claims');
     setPipelineComplete(null);
     try {
-      const data = await fetchWithPolling('yt-claim-gen', { rawIdea: script.trim() });
+      const data = await fetchWithPolling('yt-claim-gen', { rawIdea: script.trim(), creatorName });
       const claimsArray: Claim[] = (data.claims as Claim[]) ?? [];
       if (!claimsArray.length) throw new Error('No claims returned');
       setClaims(claimsArray);
@@ -234,17 +329,20 @@ export default function PipelinePage() {
       setStage('script');
       setPipelineComplete(null);
     }
-  }, [script]);
+  }, [script, creatorName]);
 
-  const selectClaim = useCallback(async (claim: Claim) => {
-    setChosenClaim(claim);
+  const selectClaim = useCallback(async (claim: Claim, overrideText?: string) => {
+    const claimText = overrideText ?? claim.claim;
+    setChosenClaim({ ...claim, claim: claimText });
     setError(null);
     setStage('loading-hooks');
     setPipelineComplete(null);
+    setEditingId(null);
     try {
       const data = await fetchWithPolling('yt-hook-gen', {
         rawIdea: script.trim(),
-        claim: claim.claim,
+        claim: claimText,
+        creatorName,
         target_audience: claim.target_audience || '',
         pain_point: claim.pain_point || '',
         video_format: claim.video_format || '',
@@ -263,17 +361,20 @@ export default function PipelinePage() {
       setStage('select-claim');
       setPipelineComplete(null);
     }
-  }, [script]);
+  }, [script, creatorName]);
 
-  const selectHook = useCallback(async (hook: Hook) => {
-    setChosenHook(hook);
+  const selectHook = useCallback(async (hook: Hook, overrideText?: string) => {
+    const hookText = overrideText ?? hook.text;
+    setChosenHook({ ...hook, text: hookText });
     setError(null);
     setStage('loading-intros');
+    setEditingId(null);
     try {
       const data = await fetchWithPolling('yt-intro-gen', {
         rawIdea: script.trim(),
         claim: chosenClaim!.claim,
-        chosenHook: hook.text,
+        chosenHook: hookText,
+        creatorName,
         target_audience: chosenClaim!.target_audience || '',
         pain_point: chosenClaim!.pain_point || '',
         video_format: chosenClaim!.video_format || '',
@@ -286,18 +387,21 @@ export default function PipelinePage() {
       setError(e instanceof Error ? e.message : 'Failed to generate intros');
       setStage('select-hook');
     }
-  }, [script, chosenClaim]);
+  }, [script, chosenClaim, creatorName]);
 
-  const selectIntro = useCallback(async (intro: Intro) => {
-    setChosenIntro(intro);
+  const selectIntro = useCallback(async (intro: Intro, overrideText?: string) => {
+    const introText = overrideText ?? intro.text;
+    setChosenIntro({ ...intro, text: introText });
     setError(null);
     setStage('loading-thumbnails');
     setPipelineComplete(null);
+    setEditingId(null);
     try {
       const data = await fetchWithPolling('yt-thumbnail-gen', {
         rawIdea: script.trim(),
         claim: chosenClaim!.claim,
         chosenHook: chosenHook!.text,
+        creatorName,
         target_audience: chosenClaim!.target_audience || '',
         pain_point: chosenClaim!.pain_point || '',
         video_format: chosenClaim!.video_format || '',
@@ -316,18 +420,20 @@ export default function PipelinePage() {
       setStage('select-intro');
       setPipelineComplete(null);
     }
-  }, [script, chosenClaim, chosenHook]);
+  }, [script, chosenClaim, chosenHook, creatorName]);
 
   const skipIntro = useCallback(async () => {
     setChosenIntro(null);
     setError(null);
     setStage('loading-thumbnails');
     setPipelineComplete(null);
+    setEditingId(null);
     try {
       const data = await fetchWithPolling('yt-thumbnail-gen', {
         rawIdea: script.trim(),
         claim: chosenClaim!.claim,
         chosenHook: chosenHook!.text,
+        creatorName,
         target_audience: chosenClaim!.target_audience || '',
         pain_point: chosenClaim!.pain_point || '',
         video_format: chosenClaim!.video_format || '',
@@ -346,19 +452,28 @@ export default function PipelinePage() {
       setStage('select-intro');
       setPipelineComplete(null);
     }
-  }, [script, chosenClaim, chosenHook]);
+  }, [script, chosenClaim, chosenHook, creatorName]);
 
-  const selectThumbnail = useCallback(async (thumb: ThumbnailText) => {
-    setChosenThumbnail(thumb);
+  const selectThumbnail = useCallback((thumb: ThumbnailText, overrideText?: string) => {
+    const thumbText = overrideText ?? thumb.text;
+    setChosenThumbnail({ ...thumb, text: thumbText });
+    setError(null);
+    setEditingId(null);
+    setStage('thumbnail-image');
+  }, []);
+
+  const loadTitles = useCallback(async (thumbText: string) => {
     setError(null);
     setStage('loading-titles');
     setPipelineComplete(null);
+    setEditingId(null);
     try {
       const data = await fetchWithPolling('yt-title-gen', {
         rawIdea: script.trim(),
         claim: chosenClaim!.claim,
         chosenHook: chosenHook!.text,
-        chosenThumbnailText: thumb.text,
+        chosenThumbnailText: thumbText,
+        creatorName,
         target_audience: chosenClaim!.target_audience || '',
         pain_point: chosenClaim!.pain_point || '',
         video_format: chosenClaim!.video_format || '',
@@ -374,24 +489,38 @@ export default function PipelinePage() {
       setPipelineComplete(null);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Failed to generate titles');
-      setStage('select-thumbnail');
+      setStage('thumbnail-image');
       setPipelineComplete(null);
     }
-  }, [script, chosenClaim, chosenHook]);
+  }, [script, chosenClaim, chosenHook, creatorName]);
 
-  const selectTitle = useCallback(async (title: Title) => {
-    setChosenTitle(title);
+  const completeThumbnailImage = useCallback((imageUrl: string) => {
+    setThumbnailImageUrl(imageUrl);
+    loadTitles(chosenThumbnail?.text ?? '');
+  }, [chosenThumbnail, loadTitles]);
+
+  const skipThumbnailImage = useCallback(() => {
+    setThumbnailImageUrl(null);
+    loadTitles(chosenThumbnail?.text ?? '');
+  }, [chosenThumbnail, loadTitles]);
+
+  const selectTitle = useCallback(async (title: Title, overrideText?: string) => {
+    const titleText = overrideText ?? title.text;
+    setChosenTitle({ ...title, text: titleText });
     setStage('saving');
     setError(null);
+    setEditingId(null);
     try {
-      const data = await fetchWithPolling('yt-save-to-notion', {
+      const data = await fetchWithPolling('yt-save-to-notion-v2', {
         rawIdea: script.trim(),
         chosenClaim: chosenClaim?.claim ?? '',
         chosenHook: chosenHook?.text ?? '',
         chosenIntro: chosenIntro?.text ?? '',
         chosenIntroAngle: chosenIntro?.credibility_angle ?? '',
         chosenThumbnailText: chosenThumbnail?.text ?? '',
-        chosenTitle: title.text,
+        thumbnailImageUrl: thumbnailImageUrl ?? '',
+        chosenTitle: titleText,
+        creatorName,
         claimOptions: claims.map((c, i) => `${i + 1}. ${c.claim}`).join('\n').slice(0, 2000),
         hookOptions: hooks.map((h, i) => `${i + 1}. ${h.text}`).join('\n').slice(0, 2000),
         thumbnailOptions: thumbnailTexts.map((t, i) => `${i + 1}. ${t.text}`).join('\n').slice(0, 2000),
@@ -403,14 +532,53 @@ export default function PipelinePage() {
         viewer_transformation: chosenClaim?.viewer_transformation ?? '',
       });
       setNotionUrl((data.notionUrl as string) ?? null);
+      saveRun({
+        creatorName,
+        rawIdea: script.trim(),
+        chosenClaim: chosenClaim?.claim ?? '',
+        chosenHook: chosenHook?.text ?? '',
+        chosenIntro: chosenIntro?.text,
+        chosenThumbnailText: chosenThumbnail?.text ?? '',
+        thumbnailImageUrl: thumbnailImageUrl ?? '',
+        chosenTitle: titleText,
+        videoBrief: {
+          target_audience: chosenClaim?.target_audience,
+          pain_point: chosenClaim?.pain_point,
+          video_format: chosenClaim?.video_format,
+        },
+      });
+      clearSession();
       setStage('done');
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Failed to save to Notion');
       setStage('select-title');
     }
-  }, [script, chosenClaim, chosenHook, chosenThumbnail, titles]);
+  }, [script, chosenClaim, chosenHook, chosenIntro, chosenThumbnail, thumbnailImageUrl, titles, claims, hooks, thumbnailTexts, creatorName]);
+
+  const saveCredential = useCallback(async () => {
+    if (!newCredential.trim() || !N8N_BASE) return;
+    setCredentialSaving(true);
+    try {
+      await fetch(`${N8N_BASE}/yt-append-credential`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ creatorName, newCredential: newCredential.trim() }),
+      });
+      setCredentialSaved(true);
+      setNewCredential('');
+      setTimeout(() => {
+        setCredentialSaved(false);
+        setShowCredentialInput(false);
+      }, 3000);
+    } catch {
+      setError('Failed to save credential');
+    } finally {
+      setCredentialSaving(false);
+    }
+  }, [newCredential, creatorName]);
 
   const reset = useCallback(() => {
+    clearSession();
     setStage('script');
     setScript('');
     setError(null);
@@ -420,6 +588,7 @@ export default function PipelinePage() {
     setChosenHook(null);
     setThumbnailTexts([]);
     setChosenThumbnail(null);
+    setThumbnailImageUrl(null);
     setTitles([]);
     setChosenTitle(null);
     setIntros([]);
@@ -427,6 +596,12 @@ export default function PipelinePage() {
     setNotionUrl(null);
     setPipelineComplete(null);
     setExpandedBriefId(null);
+    setEditedTexts({});
+    setEditingId(null);
+    setNewCredential('');
+    setCredentialSaving(false);
+    setCredentialSaved(false);
+    setShowCredentialInput(false);
   }, []);
 
   // ── Render ───────────────────────────────────────────────────────────────
@@ -437,8 +612,15 @@ export default function PipelinePage() {
 
         {/* Header */}
         <div className="mb-12">
-          <h1 className="text-lg font-semibold tracking-tight text-white">YT Pipeline</h1>
-          <p className="text-sm text-zinc-600">claim · hook · intro · thumbnail · title</p>
+          <h1 className="text-lg font-semibold tracking-tight text-white">YouTube AI Team</h1>
+          <p className="text-sm text-zinc-600">Your AI specialists for claims, hooks, intros, thumbnails, and titles</p>
+          {creatorName && (
+            <div className="mt-2 flex items-center gap-2">
+              <span className="text-xs text-zinc-600">Profile:</span>
+              <span className="text-xs text-orange-400 font-medium">{creatorName}</span>
+              <button onClick={() => router.push('/')} className="text-xs text-zinc-600 hover:text-zinc-400 underline">Switch</button>
+            </div>
+          )}
         </div>
 
         {/* Error banner */}
@@ -448,18 +630,28 @@ export default function PipelinePage() {
           </div>
         )}
 
+        {/* ── Voice Profile (required) ── */}
+        {stage === 'script' && !hasProfile && (
+          <div className="mb-6">
+            <VoiceProfileSideQuest
+              creatorName={creatorName}
+              onComplete={() => setHasProfile(true)}
+            />
+          </div>
+        )}
+
         {/* ── Stage: Script Input ── */}
-        {stage === 'script' && (
+        {stage === 'script' && hasProfile && (
           <div>
             <SectionHeader
-              step={1} total={6}
-              title="Paste your script"
-              subtitle="The full transcript or draft script for this video."
+              step={1} total={7}
+              title="Paste your raw idea"
+              subtitle="A rough transcript, voice note, bullet points — whatever captures the idea."
             />
             <textarea
               className="w-full rounded-xl border border-zinc-800 bg-zinc-900 px-5 py-4 text-sm leading-relaxed text-zinc-200 placeholder-zinc-600 outline-none focus:border-zinc-600 focus:ring-0"
               rows={16}
-              placeholder="Paste your video script or transcript here…"
+              placeholder="Dump your raw idea here — a ramble, voice note transcript, bullet points, anything..."
               value={script}
               onChange={(e) => setScript(e.target.value)}
             />
@@ -468,7 +660,7 @@ export default function PipelinePage() {
               disabled={!script.trim()}
               className="mt-4 rounded-lg bg-orange-500 px-6 py-3 text-sm font-semibold text-white transition-all hover:bg-orange-400 disabled:cursor-not-allowed disabled:opacity-30"
             >
-              Generate Claims →
+              Generate Claims
             </button>
           </div>
         )}
@@ -480,27 +672,43 @@ export default function PipelinePage() {
         {stage === 'select-claim' && (
           <div>
             <SectionHeader
-              step={2} total={6}
+              step={2} total={7}
               title="Select the core claim"
               subtitle="Pick the angle that best captures what this video argues."
             />
             <div className="flex flex-col gap-3">
-              {claims.map((c) => {
+              {claims.map((c, i) => {
+                const editId = `claim-${i}`;
+                const isEditing = editingId === editId;
                 const isExpanded = expandedBriefId === c.id;
+                const displayText = getDisplayText(editId, c.claim);
                 return (
                   <div
                     key={c.id}
-                    className="rounded-xl border border-zinc-800 bg-zinc-900 px-5 py-4 transition-all hover:border-orange-500/60 hover:bg-zinc-800"
+                    className={`rounded-xl border px-5 py-4 transition-all hover:border-orange-500/60 hover:bg-zinc-800 ${isEditing ? 'border-orange-500/40 bg-zinc-900' : 'border-zinc-800 bg-zinc-900'}`}
                   >
                     <div className="flex items-start justify-between gap-3">
-                      <p className="text-sm font-medium leading-relaxed text-white">
-                        {c.claim}
-                      </p>
-                      {c.video_format && (
-                        <span className="shrink-0 rounded-full bg-orange-500/10 px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-orange-400 border border-orange-500/20">
-                          {c.video_format}
-                        </span>
+                      {isEditing ? (
+                        <textarea
+                          className="flex-1 rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm leading-relaxed text-zinc-200 outline-none focus:border-orange-500/40"
+                          rows={3}
+                          value={displayText}
+                          onChange={(e) => updateEditedText(editId, e.target.value)}
+                          autoFocus
+                        />
+                      ) : (
+                        <p className="text-sm font-medium leading-relaxed text-white">
+                          {displayText}
+                        </p>
                       )}
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <PencilButton active={isEditing} onClick={() => toggleEdit(editId, c.claim)} />
+                        {c.video_format && (
+                          <span className="rounded-full bg-orange-500/10 px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-orange-400 border border-orange-500/20">
+                            {c.video_format}
+                          </span>
+                        )}
+                      </div>
                     </div>
                     <p className="mt-1 text-xs text-zinc-600">{c.angle}</p>
 
@@ -519,13 +727,13 @@ export default function PipelinePage() {
                         onClick={() => setExpandedBriefId(isExpanded ? null : c.id)}
                         className="text-xs text-zinc-500 hover:text-zinc-300 transition-colors"
                       >
-                        {isExpanded ? 'Hide brief ▴' : 'Show brief ▾'}
+                        {isExpanded ? 'Hide brief' : 'Show brief'}
                       </button>
                       <button
-                        onClick={() => selectClaim(c)}
+                        onClick={() => selectClaim(c, editedTexts[editId])}
                         className="rounded-lg bg-orange-500/10 px-4 py-1.5 text-xs font-medium text-orange-400 border border-orange-500/20 hover:bg-orange-500/20 transition-all"
                       >
-                        Select →
+                        Select
                       </button>
                     </div>
                   </div>
@@ -560,27 +768,52 @@ export default function PipelinePage() {
               </div>
             )}
             <SectionHeader
-              step={3} total={6}
+              step={3} total={7}
               title="Select a hook"
-              subtitle="The opening line Josh speaks in the first 10 seconds."
+              subtitle="The opening line spoken in the first 10 seconds."
             />
             <div className="flex flex-col gap-3">
-              {hooks.map((h, i) => (
-                <button
-                  key={i}
-                  onClick={() => selectHook(h)}
-                  className="group rounded-xl border border-zinc-800 bg-zinc-900 px-5 py-4 text-left transition-all hover:border-orange-500/60 hover:bg-zinc-800"
-                >
-                  <p className="text-sm leading-relaxed text-white group-hover:text-orange-400">{h.text}</p>
-                  <p className="mt-1 text-xs text-zinc-600">{h.mechanism}</p>
-                </button>
-              ))}
+              {hooks.map((h, i) => {
+                const editId = `hook-${i}`;
+                const isEditing = editingId === editId;
+                const displayText = getDisplayText(editId, h.text);
+                return (
+                  <div
+                    key={i}
+                    className={`rounded-xl border px-5 py-4 transition-all hover:border-orange-500/60 hover:bg-zinc-800 ${isEditing ? 'border-orange-500/40 bg-zinc-900' : 'border-zinc-800 bg-zinc-900'}`}
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      {isEditing ? (
+                        <textarea
+                          className="flex-1 rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm leading-relaxed text-zinc-200 outline-none focus:border-orange-500/40"
+                          rows={3}
+                          value={displayText}
+                          onChange={(e) => updateEditedText(editId, e.target.value)}
+                          autoFocus
+                        />
+                      ) : (
+                        <p className="text-sm leading-relaxed text-white">{displayText}</p>
+                      )}
+                      <PencilButton active={isEditing} onClick={() => toggleEdit(editId, h.text)} />
+                    </div>
+                    <div className="mt-2 flex items-center justify-between">
+                      <p className="text-xs text-zinc-600">{h.mechanism}</p>
+                      <button
+                        onClick={() => selectHook(h, editedTexts[editId])}
+                        className="rounded-lg bg-orange-500/10 px-4 py-1.5 text-xs font-medium text-orange-400 border border-orange-500/20 hover:bg-orange-500/20 transition-all"
+                      >
+                        Select
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           </div>
         )}
 
         {/* ── Stage: Loading Intros ── */}
-        {stage === 'loading-intros' && <Spinner label="Generating intro suggestions…" />}
+        {stage === 'loading-intros' && <Spinner label="Generating intro suggestions..." />}
 
         {/* ── Stage: Select Intro ── */}
         {stage === 'select-intro' && (
@@ -590,39 +823,93 @@ export default function PipelinePage() {
               <SelectionPill label="Hook" value={chosenHook?.text ?? ''} />
             </div>
             <SectionHeader
-              step={4} total={6}
+              step={4} total={7}
               title="Select an intro"
-              subtitle="How Josh establishes credibility for this specific topic. Optional — skip if none fit."
+              subtitle="How you establish credibility for this specific topic. Optional -- skip if none fit."
             />
             <div className="flex flex-col gap-3">
-              {intros.map((intro) => (
-                <div
-                  key={intro.id}
-                  className="rounded-xl border border-zinc-800 bg-zinc-900 px-5 py-4 transition-all hover:border-orange-500/60 hover:bg-zinc-800"
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <p className="text-sm leading-relaxed text-white">{intro.text}</p>
-                    <span className="shrink-0 rounded-full bg-orange-500/10 px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-orange-400 border border-orange-500/20">
-                      {intro.credibility_angle}
-                    </span>
+              {intros.map((intro) => {
+                const editId = `intro-${intro.id}`;
+                const isEditing = editingId === editId;
+                const displayText = getDisplayText(editId, intro.text);
+                return (
+                  <div
+                    key={intro.id}
+                    className={`rounded-xl border px-5 py-4 transition-all hover:border-orange-500/60 hover:bg-zinc-800 ${isEditing ? 'border-orange-500/40 bg-zinc-900' : 'border-zinc-800 bg-zinc-900'}`}
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      {isEditing ? (
+                        <textarea
+                          className="flex-1 rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm leading-relaxed text-zinc-200 outline-none focus:border-orange-500/40"
+                          rows={4}
+                          value={displayText}
+                          onChange={(e) => updateEditedText(editId, e.target.value)}
+                          autoFocus
+                        />
+                      ) : (
+                        <p className="text-sm leading-relaxed text-white">{displayText}</p>
+                      )}
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <PencilButton active={isEditing} onClick={() => toggleEdit(editId, intro.text)} />
+                        <span className="rounded-full bg-orange-500/10 px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-orange-400 border border-orange-500/20">
+                          {intro.credibility_angle}
+                        </span>
+                      </div>
+                    </div>
+                    <p className="mt-1 text-xs text-zinc-600">{intro.why_this_works}</p>
+                    <div className="mt-3 flex justify-end">
+                      <button
+                        onClick={() => selectIntro(intro, editedTexts[editId])}
+                        className="rounded-lg bg-orange-500/10 px-4 py-1.5 text-xs font-medium text-orange-400 border border-orange-500/20 hover:bg-orange-500/20 transition-all"
+                      >
+                        Select
+                      </button>
+                    </div>
                   </div>
-                  <p className="mt-1 text-xs text-zinc-600">{intro.why_this_works}</p>
-                  <div className="mt-3 flex justify-end">
+                );
+              })}
+            </div>
+
+            {/* ── Credential Input ── */}
+            <div className="mt-6 mb-4">
+              <button
+                onClick={() => setShowCredentialInput(!showCredentialInput)}
+                className="text-xs text-zinc-500 hover:text-zinc-300 transition-colors"
+              >
+                {showCredentialInput ? '- Hide credential input' : '+ Add a credential for future runs'}
+              </button>
+              {showCredentialInput && (
+                <div className="mt-3 rounded-xl border border-zinc-800 bg-zinc-900/50 px-5 py-4">
+                  <p className="text-xs font-medium text-zinc-400 mb-2">Add a new credential or experience</p>
+                  <textarea
+                    className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm leading-relaxed text-zinc-200 placeholder-zinc-600 outline-none focus:border-orange-500/40"
+                    rows={2}
+                    placeholder="e.g. I was pressured to leave the UAE when the war started..."
+                    value={newCredential}
+                    onChange={(e) => setNewCredential(e.target.value)}
+                  />
+                  <p className="mt-1.5 text-xs text-zinc-600">This won't change current options -- it enriches your profile for next time.</p>
+                  <div className="mt-3 flex items-center gap-3">
                     <button
-                      onClick={() => selectIntro(intro)}
-                      className="rounded-lg bg-orange-500/10 px-4 py-1.5 text-xs font-medium text-orange-400 border border-orange-500/20 hover:bg-orange-500/20 transition-all"
+                      onClick={saveCredential}
+                      disabled={!newCredential.trim() || credentialSaving}
+                      className="rounded-lg bg-orange-500/10 px-4 py-1.5 text-xs font-medium text-orange-400 border border-orange-500/20 hover:bg-orange-500/20 transition-all disabled:opacity-30 disabled:cursor-not-allowed"
                     >
-                      Select →
+                      {credentialSaving ? 'Saving...' : 'Save credential'}
                     </button>
+                    {credentialSaved && (
+                      <span className="text-xs text-emerald-400">Saved -- will be used in future runs</span>
+                    )}
                   </div>
                 </div>
-              ))}
+              )}
             </div>
+
             <button
               onClick={skipIntro}
-              className="mt-4 text-sm text-zinc-500 hover:text-zinc-300 transition-colors"
+              className="text-sm text-zinc-500 hover:text-zinc-300 transition-colors"
             >
-              Skip intro →
+              Skip intro
             </button>
           </div>
         )}
@@ -651,25 +938,60 @@ export default function PipelinePage() {
               )}
             </div>
             <SectionHeader
-              step={5} total={6}
+              step={5} total={7}
               title="Select thumbnail text"
-              subtitle="2–5 words that appear on the thumbnail image."
+              subtitle="2-5 words that appear on the thumbnail image."
             />
             <div className="grid grid-cols-2 gap-3">
-              {thumbnailTexts.map((t, i) => (
-                <button
-                  key={i}
-                  onClick={() => selectThumbnail(t)}
-                  className="group rounded-xl border border-zinc-800 bg-zinc-900 px-5 py-4 text-left transition-all hover:border-orange-500/60 hover:bg-zinc-800"
-                >
-                  <p className="text-base font-semibold uppercase tracking-wide text-white group-hover:text-orange-400">
-                    {t.text}
-                  </p>
-                  <p className="mt-1 text-xs text-zinc-600">{t.visual_concept}</p>
-                </button>
-              ))}
+              {thumbnailTexts.map((t, i) => {
+                const editId = `thumb-${i}`;
+                const isEditing = editingId === editId;
+                const displayText = getDisplayText(editId, t.text);
+                return (
+                  <div
+                    key={i}
+                    className={`rounded-xl border px-5 py-4 transition-all hover:border-orange-500/60 hover:bg-zinc-800 ${isEditing ? 'border-orange-500/40 bg-zinc-900' : 'border-zinc-800 bg-zinc-900'}`}
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      {isEditing ? (
+                        <input
+                          type="text"
+                          className="flex-1 rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-base font-semibold uppercase tracking-wide text-zinc-200 outline-none focus:border-orange-500/40"
+                          value={displayText}
+                          onChange={(e) => updateEditedText(editId, e.target.value)}
+                          autoFocus
+                        />
+                      ) : (
+                        <p className="text-base font-semibold uppercase tracking-wide text-white">
+                          {displayText}
+                        </p>
+                      )}
+                      <PencilButton active={isEditing} onClick={() => toggleEdit(editId, t.text)} />
+                    </div>
+                    <p className="mt-1 text-xs text-zinc-600">{t.visual_concept}</p>
+                    <div className="mt-2 flex justify-end">
+                      <button
+                        onClick={() => selectThumbnail(t, editedTexts[editId])}
+                        className="rounded-lg bg-orange-500/10 px-4 py-1.5 text-xs font-medium text-orange-400 border border-orange-500/20 hover:bg-orange-500/20 transition-all"
+                      >
+                        Select
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           </div>
+        )}
+
+        {/* ── Stage: Thumbnail Image ── */}
+        {stage === 'thumbnail-image' && (
+          <ThumbnailImageStudio
+            creatorName={creatorName}
+            chosenThumbnailText={chosenThumbnail?.text ?? ''}
+            onComplete={completeThumbnailImage}
+            onSkip={skipThumbnailImage}
+          />
         )}
 
         {/* ── Stage: Loading Titles ── */}
@@ -697,118 +1019,144 @@ export default function PipelinePage() {
               )}
             </div>
             <SectionHeader
-              step={6} total={6}
+              step={7} total={7}
               title="Select a title"
               subtitle="All titles are under 60 characters. Pick the best one."
             />
             <div className="flex flex-col gap-3">
-              {titles.map((t, i) => (
-                <button
-                  key={i}
-                  onClick={() => selectTitle(t)}
-                  className="group rounded-xl border border-zinc-800 bg-zinc-900 px-5 py-4 text-left transition-all hover:border-orange-500/60 hover:bg-zinc-800"
-                >
-                  <p className="text-sm font-medium text-white group-hover:text-orange-400">{t.text}</p>
-                  <div className="mt-1 flex items-center gap-3">
-                    <span className="text-xs text-zinc-600">{t.character_count} chars</span>
-                    <span className="text-xs text-zinc-700">·</span>
-                    <span className="text-xs text-zinc-600">{t.formula}</span>
+              {titles.map((t, i) => {
+                const editId = `title-${i}`;
+                const isEditing = editingId === editId;
+                const displayText = getDisplayText(editId, t.text);
+                const charCount = (editedTexts[editId] ?? t.text).length;
+                return (
+                  <div
+                    key={i}
+                    className={`rounded-xl border px-5 py-4 transition-all hover:border-orange-500/60 hover:bg-zinc-800 ${isEditing ? 'border-orange-500/40 bg-zinc-900' : 'border-zinc-800 bg-zinc-900'}`}
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      {isEditing ? (
+                        <input
+                          type="text"
+                          className="flex-1 rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm font-medium text-zinc-200 outline-none focus:border-orange-500/40"
+                          value={displayText}
+                          onChange={(e) => updateEditedText(editId, e.target.value)}
+                          autoFocus
+                        />
+                      ) : (
+                        <p className="text-sm font-medium text-white">{displayText}</p>
+                      )}
+                      <PencilButton active={isEditing} onClick={() => toggleEdit(editId, t.text)} />
+                    </div>
+                    <div className="mt-2 flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <span className={`text-xs ${charCount > 60 ? 'text-red-400 font-medium' : 'text-zinc-600'}`}>{charCount}/60 chars</span>
+                        <span className="text-xs text-zinc-700">·</span>
+                        <span className="text-xs text-zinc-600">{t.formula}</span>
+                      </div>
+                      <button
+                        onClick={() => selectTitle(t, editedTexts[editId])}
+                        className="rounded-lg bg-orange-500/10 px-4 py-1.5 text-xs font-medium text-orange-400 border border-orange-500/20 hover:bg-orange-500/20 transition-all"
+                      >
+                        Select
+                      </button>
+                    </div>
                   </div>
-                </button>
-              ))}
+                );
+              })}
             </div>
           </div>
         )}
 
         {/* ── Stage: Saving ── */}
-        {stage === 'saving' && <Spinner label="Saving to Notion…" />}
+        {stage === 'saving' && <Spinner label="Generating your YouTube Brief..." />}
 
         {/* ── Stage: Done ── */}
         {stage === 'done' && (
           <div>
-            <div className="mb-8">
+            <div className="mb-6">
               <p className="mb-1 text-xs font-medium uppercase tracking-widest text-orange-500">Complete</p>
-              <h2 className="text-2xl font-semibold text-white">Pipeline done</h2>
-              {notionUrl && (
-                <a
-                  href={notionUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="mt-1 text-sm text-zinc-500 underline hover:text-zinc-300"
-                >
-                  View in Notion →
-                </a>
-              )}
+              <h2 className="text-2xl font-semibold text-white">Your YouTube Brief</h2>
             </div>
-            <div className="space-y-4">
-              <ResultCard label="Claim" value={chosenClaim?.claim ?? ''} />
-              {chosenClaim && (
-                <div className="rounded-xl border border-zinc-800 bg-zinc-900 px-5 py-4">
-                  <p className="text-xs font-medium text-zinc-600 mb-3">Video Brief</p>
-                  <div className="grid grid-cols-2 gap-x-6 gap-y-3">
-                    {chosenClaim.video_format && (
-                      <div className="text-xs">
-                        <span className="text-zinc-600 font-medium">Format</span>
-                        <p className="text-zinc-300 mt-0.5">{chosenClaim.video_format}</p>
-                      </div>
-                    )}
-                    {chosenClaim.target_audience && (
-                      <div className="text-xs">
-                        <span className="text-zinc-600 font-medium">Target audience</span>
-                        <p className="text-zinc-300 mt-0.5">{chosenClaim.target_audience}</p>
-                      </div>
-                    )}
-                    {chosenClaim.pain_point && (
-                      <div className="text-xs">
-                        <span className="text-zinc-600 font-medium">Pain point</span>
-                        <p className="text-zinc-300 mt-0.5">{chosenClaim.pain_point}</p>
-                      </div>
-                    )}
-                    {chosenClaim.promise_structure && (
-                      <div className="text-xs">
-                        <span className="text-zinc-600 font-medium">Promise</span>
-                        <p className="text-zinc-300 mt-0.5">{chosenClaim.promise_structure}</p>
-                      </div>
-                    )}
-                    {chosenClaim.viewer_transformation && (
-                      <div className="text-xs col-span-2">
-                        <span className="text-zinc-600 font-medium">Viewer transformation</span>
-                        <p className="text-zinc-300 mt-0.5">{chosenClaim.viewer_transformation}</p>
-                      </div>
-                    )}
-                    {chosenClaim.angle && (
-                      <div className="text-xs col-span-2">
-                        <span className="text-zinc-600 font-medium">Angle</span>
-                        <p className="text-zinc-300 mt-0.5">{chosenClaim.angle}</p>
-                      </div>
-                    )}
-                  </div>
+
+            {/* Hero: Title + Thumbnail */}
+            <div className="rounded-xl border border-orange-500/40 bg-orange-500/5 px-6 py-5 mb-3">
+              {thumbnailImageUrl && (
+                <div className="mb-4">
+                  <img src={thumbnailImageUrl} alt="Generated thumbnail" className="w-full rounded-lg aspect-video object-cover" />
                 </div>
               )}
-              <ResultCard label="Hook" value={chosenHook?.text ?? ''} />
+              <p className="text-lg font-semibold text-orange-300 leading-snug">{chosenTitle?.text ?? ''}</p>
+              <div className="mt-2 flex items-center gap-3">
+                <span className="rounded-full bg-zinc-800 px-3 py-1 text-xs font-bold uppercase tracking-wider text-white">{chosenThumbnail?.text ?? ''}</span>
+                {chosenClaim?.video_format && (
+                  <span className="text-xs text-zinc-500">{chosenClaim.video_format}</span>
+                )}
+              </div>
+            </div>
+
+            {/* Spoken: Hook + Intro */}
+            <div className="rounded-xl border border-zinc-800 bg-zinc-900 px-5 py-4 mb-3 space-y-3">
+              <div>
+                <p className="text-xs font-medium text-zinc-500 mb-1">Hook</p>
+                <p className="text-sm leading-relaxed text-zinc-200">{chosenHook?.text ?? ''}</p>
+              </div>
               {chosenIntro && (
-                <div className="rounded-xl border border-zinc-800 bg-zinc-900 px-5 py-4">
-                  <div className="flex items-start justify-between gap-3 mb-1">
-                    <p className="text-xs font-medium text-zinc-600">Intro</p>
-                    <span className="shrink-0 rounded-full bg-orange-500/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-orange-400 border border-orange-500/20">
+                <div className="pt-3 border-t border-zinc-800">
+                  <div className="flex items-center justify-between mb-1">
+                    <p className="text-xs font-medium text-zinc-500">Intro</p>
+                    <span className="rounded-full bg-orange-500/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-orange-400 border border-orange-500/20">
                       {chosenIntro.credibility_angle}
                     </span>
                   </div>
                   <p className="text-sm leading-relaxed text-zinc-200">{chosenIntro.text}</p>
                 </div>
               )}
-              <ResultCard label="Thumbnail Text" value={chosenThumbnail?.text ?? ''} />
-              <ResultCard label="Title" value={chosenTitle?.text ?? ''} highlight />
             </div>
-            <button
-              onClick={reset}
-              className="mt-10 rounded-lg border border-zinc-800 px-6 py-3 text-sm text-zinc-400 transition-all hover:border-zinc-600 hover:text-white"
-            >
-              Start new video
-            </button>
+
+            {/* Brief: Claim + metadata */}
+            <div className="rounded-xl border border-zinc-800 bg-zinc-900 px-5 py-4 mb-3">
+              <p className="text-xs font-medium text-zinc-500 mb-2">Claim</p>
+              <p className="text-sm text-zinc-200 mb-3">{chosenClaim?.claim ?? ''}</p>
+              {chosenClaim && (
+                <div className="grid grid-cols-2 gap-x-6 gap-y-2 pt-3 border-t border-zinc-800">
+                  {chosenClaim.target_audience && (
+                    <div className="text-xs"><span className="text-zinc-600 font-medium">Audience</span><p className="text-zinc-400 mt-0.5">{chosenClaim.target_audience}</p></div>
+                  )}
+                  {chosenClaim.pain_point && (
+                    <div className="text-xs"><span className="text-zinc-600 font-medium">Pain point</span><p className="text-zinc-400 mt-0.5">{chosenClaim.pain_point}</p></div>
+                  )}
+                  {chosenClaim.promise_structure && (
+                    <div className="text-xs col-span-2"><span className="text-zinc-600 font-medium">Promise</span><p className="text-zinc-400 mt-0.5">{chosenClaim.promise_structure}</p></div>
+                  )}
+                  {chosenClaim.viewer_transformation && (
+                    <div className="text-xs col-span-2"><span className="text-zinc-600 font-medium">Transformation</span><p className="text-zinc-400 mt-0.5">{chosenClaim.viewer_transformation}</p></div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            <div className="mt-8 flex items-center gap-3">
+              {thumbnailImageUrl && (
+                <a
+                  href={thumbnailImageUrl}
+                  download="thumbnail.png"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="rounded-lg bg-orange-500 px-6 py-3 text-sm font-semibold text-white transition-all hover:bg-orange-400"
+                >
+                  Download thumbnail
+                </a>
+              )}
+              <button
+                onClick={reset}
+                className="rounded-lg border border-zinc-800 px-6 py-3 text-sm text-zinc-400 transition-all hover:border-zinc-600 hover:text-white"
+              >
+                Start new video
+              </button>
+            </div>
           </div>
         )}
-
       </div>
     </div>
   );
