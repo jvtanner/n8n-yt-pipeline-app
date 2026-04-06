@@ -230,12 +230,23 @@ export default function PipelinePage() {
   const [retryCount, setRetryCount] = useState(0);
   const [retryError, setRetryError] = useState<string | null>(null);
 
+  const [needsCode, setNeedsCode] = useState(false);
+  const [codeInput, setCodeInput] = useState('');
+  const [codeError, setCodeError] = useState<string | null>(null);
+  const [codeValidating, setCodeValidating] = useState(false);
+
   useEffect(() => {
     const name = localStorage.getItem('ytPipelineCreator');
     if (!name) { router.replace('/'); return; }
     setCreatorName(name);
     setHasProfile(!!localStorage.getItem('ytPipelineProfile:' + name));
     setSideQuestDismissed(!!localStorage.getItem('ytPipelineSideQuestDismissed'));
+
+    const freeRunUsed = localStorage.getItem('ytPipelineFreeRunUsed') === 'true';
+    const hasCode = !!localStorage.getItem('ytPipelineAccessCode');
+    if (freeRunUsed && !hasCode) {
+      setNeedsCode(true);
+    }
 
     // Restore session if one exists
     const savedSession = loadSession();
@@ -600,6 +611,7 @@ export default function PipelinePage() {
           video_format: chosenClaim?.video_format,
         },
       });
+      localStorage.setItem('ytPipelineFreeRunUsed', 'true');
       setRetryCount(0);
       setRetryPayload(null);
       setRetryError(null);
@@ -718,6 +730,30 @@ export default function PipelinePage() {
     setDoneEditText('');
   };
 
+  // ── Access code validation ──────────────────────────────────────────────
+  const validateCode = async () => {
+    setCodeValidating(true);
+    setCodeError(null);
+    try {
+      const res = await fetch('/api/validate-code', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code: codeInput }),
+      });
+      const data = await res.json();
+      if (data.valid) {
+        localStorage.setItem('ytPipelineAccessCode', codeInput.trim());
+        setNeedsCode(false);
+      } else {
+        setCodeError('Invalid code. Please try again.');
+      }
+    } catch {
+      setCodeError('Something went wrong. Please try again.');
+    } finally {
+      setCodeValidating(false);
+    }
+  };
+
   // ── Render ───────────────────────────────────────────────────────────────
 
   function CopyButton({ text, size = 13 }: { text: string; size?: number }) {
@@ -737,6 +773,55 @@ export default function PipelinePage() {
         size={size}
         active={copied}
       />
+    );
+  }
+
+  if (needsCode) {
+    const stripeLink = process.env.NEXT_PUBLIC_STRIPE_PAYMENT_LINK;
+    return (
+      <div className="min-h-screen bg-zinc-950 text-white flex items-center justify-center">
+        <div className="max-w-md w-full px-6">
+          <div className="mb-8 text-center">
+            <h1 className="text-2xl font-semibold text-white mb-2">Enter your access code</h1>
+            <p className="text-sm text-zinc-500">You&apos;ve used your free run. Enter an access code to continue creating.</p>
+          </div>
+
+          <div className="flex flex-col gap-4">
+            <input
+              type="text"
+              value={codeInput}
+              onChange={e => setCodeInput(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && codeInput.trim() && validateCode()}
+              placeholder="Enter code"
+              className="w-full rounded-xl border border-zinc-800 bg-zinc-900 px-5 py-3 text-sm text-zinc-200 placeholder-zinc-600 outline-none focus:border-zinc-600"
+              autoFocus
+            />
+
+            {codeError && (
+              <p className="text-sm text-red-400 text-center">{codeError}</p>
+            )}
+
+            <button
+              onClick={validateCode}
+              disabled={!codeInput.trim() || codeValidating}
+              className="rounded-xl bg-orange-500 px-6 py-3 text-sm font-semibold text-white transition-all hover:bg-orange-400 disabled:opacity-30 disabled:cursor-not-allowed"
+            >
+              {codeValidating ? 'Checking...' : 'Continue'}
+            </button>
+
+            {stripeLink && (
+              <a
+                href={stripeLink}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-sm text-zinc-500 hover:text-zinc-300 text-center transition-colors"
+              >
+                Don&apos;t have a code? Get access &rarr;
+              </a>
+            )}
+          </div>
+        </div>
+      </div>
     );
   }
 
