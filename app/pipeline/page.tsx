@@ -279,6 +279,11 @@ export default function PipelinePage() {
   const [editedTexts, setEditedTexts] = useState<Record<string, string>>({});
   const [editingId, setEditingId] = useState<string | null>(null);
 
+  // ── Done-screen editing state ───────────────────────────────────────────
+  const [doneEditing, setDoneEditing] = useState<string | null>(null);
+  const [doneEditText, setDoneEditText] = useState('');
+  const [showThumbnailStudio, setShowThumbnailStudio] = useState(false);
+
   // ── Credential input state ───────────────────────────────────────────────
   const [newCredential, setNewCredential] = useState('');
   const [credentialSaving, setCredentialSaving] = useState(false);
@@ -645,6 +650,9 @@ export default function PipelinePage() {
     setCredentialSaving(false);
     setCredentialSaved(false);
     setShowCredentialInput(false);
+    setDoneEditing(null);
+    setDoneEditText('');
+    setShowThumbnailStudio(false);
   }, []);
 
   const handleRetry = useCallback(() => {
@@ -675,6 +683,27 @@ export default function PipelinePage() {
     };
     setStage((fallbackMap[stage] || 'script') as Stage);
   }, [stage]);
+
+  // ── Done-screen edit handlers ─────────────────────────────────────────
+  const startDoneEdit = (field: string, currentText: string) => {
+    setDoneEditing(field);
+    setDoneEditText(currentText);
+  };
+
+  const saveDoneEdit = () => {
+    if (!doneEditing) return;
+    if (doneEditing === 'title' && chosenTitle) setChosenTitle({ ...chosenTitle, text: doneEditText });
+    else if (doneEditing === 'hook' && chosenHook) setChosenHook({ ...chosenHook, text: doneEditText });
+    else if (doneEditing === 'intro' && chosenIntro) setChosenIntro({ ...chosenIntro, text: doneEditText });
+    else if (doneEditing === 'claim' && chosenClaim) setChosenClaim({ ...chosenClaim, claim: doneEditText });
+    else if (doneEditing === 'thumbnailText' && chosenThumbnail) setChosenThumbnail({ ...chosenThumbnail, text: doneEditText });
+    setDoneEditing(null);
+  };
+
+  const cancelDoneEdit = () => {
+    setDoneEditing(null);
+    setDoneEditText('');
+  };
 
   // ── Render ───────────────────────────────────────────────────────────────
 
@@ -1369,19 +1398,68 @@ export default function PipelinePage() {
             {/* Hero: Title + Thumbnail */}
             <div className="rounded-xl border border-orange-500/40 bg-orange-500/5 px-6 py-5 mb-3">
               {thumbnailImageUrl && (
-                <div className="mb-4">
+                <div className="relative mb-4">
                   <img src={thumbnailImageUrl} alt="Generated thumbnail" className="w-full rounded-lg aspect-video object-cover" />
+                  <button
+                    onClick={() => setShowThumbnailStudio(true)}
+                    className="absolute bottom-3 right-3 flex items-center gap-1.5 bg-zinc-900/85 backdrop-blur border border-zinc-700 text-zinc-400 px-3 py-1.5 rounded-lg text-xs hover:text-zinc-200 transition-colors"
+                  >
+                    <svg width={13} height={13} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}><path d="M1 4v6h6M23 20v-6h-6"/><path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15"/></svg>
+                    Regenerate
+                  </button>
                 </div>
               )}
               <div className="flex items-start gap-2">
-                <p className="text-lg font-semibold text-orange-300 leading-snug">{chosenTitle?.text ?? ''}</p>
-                <CopyButton text={chosenTitle?.text || ''} />
+                <div className="flex-1">
+                  <div className="text-[11px] text-zinc-500 uppercase tracking-wider mb-1">Title</div>
+                  {doneEditing === 'title' ? (
+                    <div className="flex flex-col gap-2">
+                      <textarea
+                        value={doneEditText}
+                        onChange={e => setDoneEditText(e.target.value)}
+                        className="w-full rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-200 outline-none focus:border-zinc-500"
+                        rows={2}
+                      />
+                      <div className="flex gap-2">
+                        <button onClick={saveDoneEdit} className="text-xs text-orange-500 hover:text-orange-400">Save</button>
+                        <button onClick={cancelDoneEdit} className="text-xs text-zinc-600 hover:text-zinc-400">Cancel</button>
+                      </div>
+                    </div>
+                  ) : (
+                    <p className="text-lg font-semibold text-orange-300 leading-snug">{chosenTitle?.text ?? ''}</p>
+                  )}
+                </div>
+                <div className="flex gap-0.5 pt-4">
+                  <CopyButton text={chosenTitle?.text || ''} />
+                  <IconButton icon="edit" onClick={() => startDoneEdit('title', chosenTitle?.text || '')} title="Edit" />
+                </div>
               </div>
-              <div className="mt-2 flex items-center gap-3">
-                <span className="rounded-full bg-zinc-800 px-3 py-1 text-xs font-bold uppercase tracking-wider text-white">{chosenThumbnail?.text ?? ''}</span>
-                <CopyButton text={chosenThumbnail?.text || ''} />
+              <div className="mt-2 flex items-start gap-2">
+                <div className="flex-1">
+                  <div className="text-[11px] text-zinc-500 uppercase tracking-wider mb-1">Thumbnail Text</div>
+                  {doneEditing === 'thumbnailText' ? (
+                    <div className="flex flex-col gap-2">
+                      <textarea
+                        value={doneEditText}
+                        onChange={e => setDoneEditText(e.target.value)}
+                        className="w-full rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-200 outline-none focus:border-zinc-500"
+                        rows={2}
+                      />
+                      <div className="flex gap-2">
+                        <button onClick={saveDoneEdit} className="text-xs text-orange-500 hover:text-orange-400">Save</button>
+                        <button onClick={cancelDoneEdit} className="text-xs text-zinc-600 hover:text-zinc-400">Cancel</button>
+                      </div>
+                    </div>
+                  ) : (
+                    <span className="rounded-full bg-zinc-800 px-3 py-1 text-xs font-bold uppercase tracking-wider text-white">{chosenThumbnail?.text ?? ''}</span>
+                  )}
+                </div>
+                <div className="flex gap-0.5 pt-4">
+                  <CopyButton text={chosenThumbnail?.text || ''} />
+                  <IconButton icon="edit" onClick={() => startDoneEdit('thumbnailText', chosenThumbnail?.text || '')} title="Edit" />
+                </div>
                 {chosenClaim?.video_format && (
-                  <span className="text-xs text-zinc-500">{chosenClaim.video_format}</span>
+                  <span className="text-xs text-zinc-500 pt-5">{chosenClaim.video_format}</span>
                 )}
               </div>
             </div>
@@ -1389,35 +1467,95 @@ export default function PipelinePage() {
             {/* Spoken: Hook + Intro */}
             <div className="rounded-xl border border-zinc-800 bg-zinc-900 px-5 py-4 mb-3 space-y-3">
               <div>
-                <div className="flex items-center justify-between mb-1">
-                  <p className="text-xs font-medium text-zinc-500">Hook</p>
-                  <CopyButton text={chosenHook?.text || ''} />
+                <div className="flex items-start gap-2">
+                  <div className="flex-1">
+                    <div className="text-[11px] text-zinc-500 uppercase tracking-wider mb-1">Hook</div>
+                    {doneEditing === 'hook' ? (
+                      <div className="flex flex-col gap-2">
+                        <textarea
+                          value={doneEditText}
+                          onChange={e => setDoneEditText(e.target.value)}
+                          className="w-full rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-200 outline-none focus:border-zinc-500"
+                          rows={2}
+                        />
+                        <div className="flex gap-2">
+                          <button onClick={saveDoneEdit} className="text-xs text-orange-500 hover:text-orange-400">Save</button>
+                          <button onClick={cancelDoneEdit} className="text-xs text-zinc-600 hover:text-zinc-400">Cancel</button>
+                        </div>
+                      </div>
+                    ) : (
+                      <p className="text-sm leading-relaxed text-zinc-200">{chosenHook?.text ?? ''}</p>
+                    )}
+                  </div>
+                  <div className="flex gap-0.5 pt-4">
+                    <CopyButton text={chosenHook?.text || ''} />
+                    <IconButton icon="edit" onClick={() => startDoneEdit('hook', chosenHook?.text || '')} title="Edit" />
+                  </div>
                 </div>
-                <p className="text-sm leading-relaxed text-zinc-200">{chosenHook?.text ?? ''}</p>
               </div>
               {chosenIntro && (
                 <div className="pt-3 border-t border-zinc-800">
-                  <div className="flex items-center justify-between mb-1">
-                    <p className="text-xs font-medium text-zinc-500">Intro</p>
-                    <div className="flex items-center gap-2">
-                      <span className="rounded-full bg-orange-500/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-orange-400 border border-orange-500/20">
-                        {chosenIntro.credibility_angle}
-                      </span>
+                  <div className="flex items-start gap-2">
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2 mb-1">
+                        <div className="text-[11px] text-zinc-500 uppercase tracking-wider">Intro</div>
+                        <span className="rounded-full bg-orange-500/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-orange-400 border border-orange-500/20">
+                          {chosenIntro.credibility_angle}
+                        </span>
+                      </div>
+                      {doneEditing === 'intro' ? (
+                        <div className="flex flex-col gap-2">
+                          <textarea
+                            value={doneEditText}
+                            onChange={e => setDoneEditText(e.target.value)}
+                            className="w-full rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-200 outline-none focus:border-zinc-500"
+                            rows={3}
+                          />
+                          <div className="flex gap-2">
+                            <button onClick={saveDoneEdit} className="text-xs text-orange-500 hover:text-orange-400">Save</button>
+                            <button onClick={cancelDoneEdit} className="text-xs text-zinc-600 hover:text-zinc-400">Cancel</button>
+                          </div>
+                        </div>
+                      ) : (
+                        <p className="text-sm leading-relaxed text-zinc-200">{chosenIntro.text}</p>
+                      )}
+                    </div>
+                    <div className="flex gap-0.5 pt-4">
                       <CopyButton text={chosenIntro?.text || ''} />
+                      <IconButton icon="edit" onClick={() => startDoneEdit('intro', chosenIntro?.text || '')} title="Edit" />
                     </div>
                   </div>
-                  <p className="text-sm leading-relaxed text-zinc-200">{chosenIntro.text}</p>
                 </div>
               )}
             </div>
 
             {/* Brief: Claim + metadata */}
             <div className="rounded-xl border border-zinc-800 bg-zinc-900 px-5 py-4 mb-3">
-              <div className="flex items-center justify-between mb-2">
-                <p className="text-xs font-medium text-zinc-500">Claim</p>
-                <CopyButton text={chosenClaim?.claim || ''} />
+              <div className="flex items-start gap-2">
+                <div className="flex-1">
+                  <div className="text-[11px] text-zinc-500 uppercase tracking-wider mb-1">Claim</div>
+                  {doneEditing === 'claim' ? (
+                    <div className="flex flex-col gap-2">
+                      <textarea
+                        value={doneEditText}
+                        onChange={e => setDoneEditText(e.target.value)}
+                        className="w-full rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-200 outline-none focus:border-zinc-500"
+                        rows={2}
+                      />
+                      <div className="flex gap-2">
+                        <button onClick={saveDoneEdit} className="text-xs text-orange-500 hover:text-orange-400">Save</button>
+                        <button onClick={cancelDoneEdit} className="text-xs text-zinc-600 hover:text-zinc-400">Cancel</button>
+                      </div>
+                    </div>
+                  ) : (
+                    <p className="text-sm text-zinc-200 mb-3">{chosenClaim?.claim ?? ''}</p>
+                  )}
+                </div>
+                <div className="flex gap-0.5 pt-4">
+                  <CopyButton text={chosenClaim?.claim || ''} />
+                  <IconButton icon="edit" onClick={() => startDoneEdit('claim', chosenClaim?.claim || '')} title="Edit" />
+                </div>
               </div>
-              <p className="text-sm text-zinc-200 mb-3">{chosenClaim?.claim ?? ''}</p>
               {chosenClaim && (
                 <div className="grid grid-cols-2 gap-x-6 gap-y-2 pt-3 border-t border-zinc-800">
                   {chosenClaim.target_audience && (
@@ -1472,6 +1610,23 @@ export default function PipelinePage() {
                 Start new video
               </button>
             </div>
+
+            {/* Thumbnail Studio overlay */}
+            {showThumbnailStudio && (
+              <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4">
+                <div className="bg-zinc-950 rounded-2xl border border-zinc-800 max-w-2xl w-full max-h-[90vh] overflow-y-auto p-6">
+                  <ThumbnailImageStudio
+                    creatorName={creatorName}
+                    chosenThumbnailText={chosenThumbnail?.text || ''}
+                    onComplete={(url) => {
+                      setThumbnailImageUrl(url);
+                      setShowThumbnailStudio(false);
+                    }}
+                    onSkip={() => setShowThumbnailStudio(false)}
+                  />
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>
