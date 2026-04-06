@@ -27,7 +27,7 @@ export default function IconButton({ icon, onClick, title, size = 14, label, act
       onClick={onClick}
       title={title}
       className={`flex items-center gap-1.5 bg-transparent border-none cursor-pointer transition-colors ${
-        active ? 'text-orange-500' : 'text-zinc-600 hover:text-zinc-400'
+        active ? 'text-orange-500' : 'text-zinc-500 hover:text-zinc-300'
       } ${className}`}
     >
       <svg

@@ -951,7 +951,7 @@ export default function PipelinePage() {
                       <div className="flex items-center gap-1.5 shrink-0">
                         <PencilButton active={isEditing} onClick={() => toggleEdit(editId, c.claim)} />
                         {c.score != null && (
-                          <span className="text-xs text-zinc-600 tabular-nums font-medium">
+                          <span className="text-xs text-zinc-400 bg-zinc-800 rounded px-1.5 py-0.5 tabular-nums font-medium">
                             {Number(c.score).toFixed(1)}
                           </span>
                         )}
@@ -1088,7 +1088,7 @@ export default function PipelinePage() {
                       <div className="flex items-center gap-2">
                         <p className="text-xs text-zinc-600">{h.mechanism}</p>
                         {h.score != null && (
-                          <span className="text-xs text-zinc-600 tabular-nums font-medium">
+                          <span className="text-xs text-zinc-400 bg-zinc-800 rounded px-1.5 py-0.5 tabular-nums font-medium">
                             {Number(h.score).toFixed(1)}
                           </span>
                         )}
@@ -1156,6 +1156,41 @@ export default function PipelinePage() {
               title="Select an intro"
               subtitle="How you establish credibility for this specific topic. Optional -- skip if none fit."
             />
+            {/* ── Credential Input ── */}
+            <div className="mt-2 mb-6">
+              <button
+                onClick={() => setShowCredentialInput(!showCredentialInput)}
+                className="text-xs text-zinc-500 hover:text-zinc-300 transition-colors"
+              >
+                {showCredentialInput ? '- Hide credential input' : '+ Add a credential you\'d like the intro to reference'}
+              </button>
+              {showCredentialInput && (
+                <div className="mt-3 rounded-xl border border-zinc-800 bg-zinc-900/50 px-5 py-4">
+                  <p className="text-xs font-medium text-zinc-400 mb-2">Add a new credential or experience</p>
+                  <textarea
+                    className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm leading-relaxed text-zinc-200 placeholder-zinc-600 outline-none focus:border-orange-500/40"
+                    rows={2}
+                    placeholder="e.g. I was pressured to leave the UAE when the war started..."
+                    value={newCredential}
+                    onChange={(e) => setNewCredential(e.target.value)}
+                  />
+                  <p className="mt-1.5 text-xs text-zinc-600">This won't change current options -- it enriches your profile for next time.</p>
+                  <div className="mt-3 flex items-center gap-3">
+                    <button
+                      onClick={saveCredential}
+                      disabled={!newCredential.trim() || credentialSaving}
+                      className="rounded-lg bg-orange-500/10 px-4 py-1.5 text-xs font-medium text-orange-400 border border-orange-500/20 hover:bg-orange-500/20 transition-all disabled:opacity-30 disabled:cursor-not-allowed"
+                    >
+                      {credentialSaving ? 'Saving...' : 'Save credential'}
+                    </button>
+                    {credentialSaved && (
+                      <span className="text-xs text-emerald-400">Saved -- will be used in future runs</span>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+
             <div className="flex flex-col gap-3">
               {intros.map((intro) => {
                 const editId = `intro-${intro.id}`;
@@ -1197,41 +1232,6 @@ export default function PipelinePage() {
                   </div>
                 );
               })}
-            </div>
-
-            {/* ── Credential Input ── */}
-            <div className="mt-6 mb-4">
-              <button
-                onClick={() => setShowCredentialInput(!showCredentialInput)}
-                className="text-xs text-zinc-500 hover:text-zinc-300 transition-colors"
-              >
-                {showCredentialInput ? '- Hide credential input' : '+ Add a credential for future runs'}
-              </button>
-              {showCredentialInput && (
-                <div className="mt-3 rounded-xl border border-zinc-800 bg-zinc-900/50 px-5 py-4">
-                  <p className="text-xs font-medium text-zinc-400 mb-2">Add a new credential or experience</p>
-                  <textarea
-                    className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm leading-relaxed text-zinc-200 placeholder-zinc-600 outline-none focus:border-orange-500/40"
-                    rows={2}
-                    placeholder="e.g. I was pressured to leave the UAE when the war started..."
-                    value={newCredential}
-                    onChange={(e) => setNewCredential(e.target.value)}
-                  />
-                  <p className="mt-1.5 text-xs text-zinc-600">This won't change current options -- it enriches your profile for next time.</p>
-                  <div className="mt-3 flex items-center gap-3">
-                    <button
-                      onClick={saveCredential}
-                      disabled={!newCredential.trim() || credentialSaving}
-                      className="rounded-lg bg-orange-500/10 px-4 py-1.5 text-xs font-medium text-orange-400 border border-orange-500/20 hover:bg-orange-500/20 transition-all disabled:opacity-30 disabled:cursor-not-allowed"
-                    >
-                      {credentialSaving ? 'Saving...' : 'Save credential'}
-                    </button>
-                    {credentialSaved && (
-                      <span className="text-xs text-emerald-400">Saved -- will be used in future runs</span>
-                    )}
-                  </div>
-                </div>
-              )}
             </div>
 
             <button
@@ -1328,7 +1328,7 @@ export default function PipelinePage() {
                     <div className="mt-1 flex items-center gap-2">
                       <p className="text-xs text-zinc-600">{t.visual_concept}</p>
                       {t.score != null && (
-                        <span className="text-xs text-zinc-600 tabular-nums font-medium">
+                        <span className="text-xs text-zinc-400 bg-zinc-800 rounded px-1.5 py-0.5 tabular-nums font-medium">
                           {Number(t.score).toFixed(1)}
                         </span>
                       )}
@@ -1454,7 +1454,7 @@ export default function PipelinePage() {
                         {t.score != null && (
                           <>
                             <span className="text-xs text-zinc-700">·</span>
-                            <span className="text-xs text-zinc-600 tabular-nums font-medium">
+                            <span className="text-xs text-zinc-400 bg-zinc-800 rounded px-1.5 py-0.5 tabular-nums font-medium">
                               {Number(t.score).toFixed(1)}
                             </span>
                           </>
@@ -1577,6 +1577,7 @@ export default function PipelinePage() {
                   ) : (
                     <span className="rounded-full bg-zinc-800 px-3 py-1 text-xs font-bold uppercase tracking-wider text-white">{chosenThumbnail?.text ?? ''}</span>
                   )}
+                  <p className="text-[11px] text-zinc-600 mt-1">This text appears ON your thumbnail image</p>
                 </div>
                 <div className="flex gap-0.5 pt-4">
                   <CopyButton text={chosenThumbnail?.text || ''} />
