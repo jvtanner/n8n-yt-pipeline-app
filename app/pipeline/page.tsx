@@ -219,6 +219,10 @@ export default function PipelinePage() {
   const [script, setScript] = useState('');
   const [error, setError] = useState<string | null>(null);
 
+  const [retryPayload, setRetryPayload] = useState<{ fn: string; args: unknown[] } | null>(null);
+  const [retryCount, setRetryCount] = useState(0);
+  const [retryError, setRetryError] = useState<string | null>(null);
+
   useEffect(() => {
     const name = localStorage.getItem('ytPipelineCreator');
     if (!name) { router.replace('/'); return; }
@@ -319,15 +323,19 @@ export default function PipelinePage() {
       const data = await fetchWithPolling('yt-claim-gen', { rawIdea: script.trim(), creatorName });
       const claimsArray: Claim[] = (data.claims as Claim[]) ?? [];
       if (!claimsArray.length) throw new Error('No claims returned');
+      setRetryCount(0);
+      setRetryPayload(null);
+      setRetryError(null);
       setClaims(claimsArray);
       setPipelineComplete('claim');
       await new Promise(r => setTimeout(r, 700));
       setStage('select-claim');
       setPipelineComplete(null);
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : 'Failed to generate claims');
-      setStage('script');
-      setPipelineComplete(null);
+      const msg = e instanceof Error ? e.message : 'Failed to generate claims';
+      setRetryError(msg);
+      setRetryCount(prev => prev + 1);
+      setRetryPayload({ fn: 'generateClaims', args: [] });
     }
   }, [script, creatorName]);
 
@@ -351,15 +359,19 @@ export default function PipelinePage() {
       });
       const hooksArray: Hook[] = (data.hooks as Hook[]) ?? [];
       if (!hooksArray.length) throw new Error('No hooks returned');
+      setRetryCount(0);
+      setRetryPayload(null);
+      setRetryError(null);
       setHooks(hooksArray);
       setPipelineComplete('hook');
       await new Promise(r => setTimeout(r, 700));
       setStage('select-hook');
       setPipelineComplete(null);
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : 'Failed to generate hooks');
-      setStage('select-claim');
-      setPipelineComplete(null);
+      const msg = e instanceof Error ? e.message : 'Failed to generate hooks';
+      setRetryError(msg);
+      setRetryCount(prev => prev + 1);
+      setRetryPayload({ fn: 'selectClaim', args: [] });
     }
   }, [script, creatorName]);
 
@@ -381,11 +393,16 @@ export default function PipelinePage() {
       });
       const introsArray: Intro[] = (data.intros as Intro[]) ?? [];
       if (!introsArray.length) throw new Error('No intros returned');
+      setRetryCount(0);
+      setRetryPayload(null);
+      setRetryError(null);
       setIntros(introsArray);
       setStage('select-intro');
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : 'Failed to generate intros');
-      setStage('select-hook');
+      const msg = e instanceof Error ? e.message : 'Failed to generate intros';
+      setRetryError(msg);
+      setRetryCount(prev => prev + 1);
+      setRetryPayload({ fn: 'selectHook', args: [] });
     }
   }, [script, chosenClaim, creatorName]);
 
@@ -410,15 +427,19 @@ export default function PipelinePage() {
       });
       const thumbsArray: ThumbnailText[] = (data.thumbnail_texts as ThumbnailText[]) ?? [];
       if (!thumbsArray.length) throw new Error('No thumbnail texts returned');
+      setRetryCount(0);
+      setRetryPayload(null);
+      setRetryError(null);
       setThumbnailTexts(thumbsArray);
       setPipelineComplete('thumbnail');
       await new Promise(r => setTimeout(r, 700));
       setStage('select-thumbnail');
       setPipelineComplete(null);
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : 'Failed to generate thumbnail texts');
-      setStage('select-intro');
-      setPipelineComplete(null);
+      const msg = e instanceof Error ? e.message : 'Failed to generate thumbnail texts';
+      setRetryError(msg);
+      setRetryCount(prev => prev + 1);
+      setRetryPayload({ fn: 'selectIntro', args: [] });
     }
   }, [script, chosenClaim, chosenHook, creatorName]);
 
@@ -442,15 +463,19 @@ export default function PipelinePage() {
       });
       const thumbsArray: ThumbnailText[] = (data.thumbnail_texts as ThumbnailText[]) ?? [];
       if (!thumbsArray.length) throw new Error('No thumbnail texts returned');
+      setRetryCount(0);
+      setRetryPayload(null);
+      setRetryError(null);
       setThumbnailTexts(thumbsArray);
       setPipelineComplete('thumbnail');
       await new Promise(r => setTimeout(r, 700));
       setStage('select-thumbnail');
       setPipelineComplete(null);
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : 'Failed to generate thumbnail texts');
-      setStage('select-intro');
-      setPipelineComplete(null);
+      const msg = e instanceof Error ? e.message : 'Failed to generate thumbnail texts';
+      setRetryError(msg);
+      setRetryCount(prev => prev + 1);
+      setRetryPayload({ fn: 'skipIntro', args: [] });
     }
   }, [script, chosenClaim, chosenHook, creatorName]);
 
@@ -482,15 +507,19 @@ export default function PipelinePage() {
       });
       const titlesArray: Title[] = (data.titles as Title[]) ?? [];
       if (!titlesArray.length) throw new Error('No titles returned');
+      setRetryCount(0);
+      setRetryPayload(null);
+      setRetryError(null);
       setTitles(titlesArray);
       setPipelineComplete('title');
       await new Promise(r => setTimeout(r, 700));
       setStage('select-title');
       setPipelineComplete(null);
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : 'Failed to generate titles');
-      setStage('thumbnail-image');
-      setPipelineComplete(null);
+      const msg = e instanceof Error ? e.message : 'Failed to generate titles';
+      setRetryError(msg);
+      setRetryCount(prev => prev + 1);
+      setRetryPayload({ fn: 'loadTitles', args: [] });
     }
   }, [script, chosenClaim, chosenHook, creatorName]);
 
@@ -547,11 +576,16 @@ export default function PipelinePage() {
           video_format: chosenClaim?.video_format,
         },
       });
+      setRetryCount(0);
+      setRetryPayload(null);
+      setRetryError(null);
       clearSession();
       setStage('done');
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : 'Failed to save to Notion');
-      setStage('select-title');
+      const msg = e instanceof Error ? e.message : 'Failed to save to Notion';
+      setRetryError(msg);
+      setRetryCount(prev => prev + 1);
+      setRetryPayload({ fn: 'selectTitle', args: [] });
     }
   }, [script, chosenClaim, chosenHook, chosenIntro, chosenThumbnail, thumbnailImageUrl, titles, claims, hooks, thumbnailTexts, creatorName]);
 
@@ -582,6 +616,9 @@ export default function PipelinePage() {
     setStage('script');
     setScript('');
     setError(null);
+    setRetryCount(0);
+    setRetryPayload(null);
+    setRetryError(null);
     setClaims([]);
     setChosenClaim(null);
     setHooks([]);
@@ -603,6 +640,35 @@ export default function PipelinePage() {
     setCredentialSaved(false);
     setShowCredentialInput(false);
   }, []);
+
+  const handleRetry = useCallback(() => {
+    if (!retryPayload) return;
+    setRetryError(null);
+    const { fn } = retryPayload;
+    if (fn === 'generateClaims') generateClaims();
+    else if (fn === 'selectClaim' && chosenClaim) selectClaim(chosenClaim);
+    else if (fn === 'selectHook' && chosenHook) selectHook(chosenHook);
+    else if (fn === 'selectIntro' && chosenIntro) selectIntro(chosenIntro);
+    else if (fn === 'skipIntro') skipIntro();
+    else if (fn === 'loadTitles' && chosenThumbnail) loadTitles(chosenThumbnail.text);
+    else if (fn === 'selectTitle' && chosenTitle) selectTitle(chosenTitle);
+  }, [retryPayload, generateClaims, selectClaim, selectHook, selectIntro, skipIntro, loadTitles, selectTitle, chosenClaim, chosenHook, chosenIntro, chosenThumbnail, chosenTitle]);
+
+  const handleRetryFallback = useCallback(() => {
+    setRetryError(null);
+    setRetryCount(0);
+    setRetryPayload(null);
+    const fallbackMap: Record<string, string> = {
+      'loading-claims': 'script',
+      'loading-hooks': 'select-claim',
+      'loading-intros': 'select-hook',
+      'loading-thumbnails': 'select-intro',
+      'loading-thumbnail-image': 'select-thumbnail',
+      'loading-titles': 'select-thumbnail',
+      'saving': 'select-title',
+    };
+    setStage((fallbackMap[stage] || 'script') as Stage);
+  }, [stage]);
 
   // ── Render ───────────────────────────────────────────────────────────────
 
@@ -666,7 +732,35 @@ export default function PipelinePage() {
         )}
 
         {/* ── Stage: Loading Claims ── */}
-        {stage === 'loading-claims' && <TensionTriangleProgress stage="claim" isComplete={pipelineComplete === 'claim'} />}
+        {stage === 'loading-claims' && (
+          retryError ? (
+            <div className="flex flex-col items-center gap-4 py-12">
+              <div className="rounded-lg border border-red-900 bg-red-950/40 px-6 py-4 text-sm text-red-400 text-center max-w-md">
+                {retryError}
+              </div>
+              {retryCount < 3 ? (
+                <button
+                  onClick={handleRetry}
+                  className="rounded-lg bg-orange-500 px-6 py-3 text-sm font-semibold text-white hover:bg-orange-400"
+                >
+                  Retry
+                </button>
+              ) : (
+                <div className="flex flex-col items-center gap-3">
+                  <p className="text-sm text-zinc-500">Something isn&apos;t working. Try starting this stage over.</p>
+                  <button
+                    onClick={handleRetryFallback}
+                    className="rounded-lg border border-zinc-700 bg-zinc-800 px-6 py-3 text-sm text-zinc-300 hover:bg-zinc-700"
+                  >
+                    Go back
+                  </button>
+                </div>
+              )}
+            </div>
+          ) : (
+            <TensionTriangleProgress stage="claim" isComplete={pipelineComplete === 'claim'} />
+          )
+        )}
 
         {/* ── Stage: Select Claim ── */}
         {stage === 'select-claim' && (
@@ -744,7 +838,35 @@ export default function PipelinePage() {
         )}
 
         {/* ── Stage: Loading Hooks ── */}
-        {stage === 'loading-hooks' && <TensionTriangleProgress stage="hook" isComplete={pipelineComplete === 'hook'} />}
+        {stage === 'loading-hooks' && (
+          retryError ? (
+            <div className="flex flex-col items-center gap-4 py-12">
+              <div className="rounded-lg border border-red-900 bg-red-950/40 px-6 py-4 text-sm text-red-400 text-center max-w-md">
+                {retryError}
+              </div>
+              {retryCount < 3 ? (
+                <button
+                  onClick={handleRetry}
+                  className="rounded-lg bg-orange-500 px-6 py-3 text-sm font-semibold text-white hover:bg-orange-400"
+                >
+                  Retry
+                </button>
+              ) : (
+                <div className="flex flex-col items-center gap-3">
+                  <p className="text-sm text-zinc-500">Something isn&apos;t working. Try starting this stage over.</p>
+                  <button
+                    onClick={handleRetryFallback}
+                    className="rounded-lg border border-zinc-700 bg-zinc-800 px-6 py-3 text-sm text-zinc-300 hover:bg-zinc-700"
+                  >
+                    Go back
+                  </button>
+                </div>
+              )}
+            </div>
+          ) : (
+            <TensionTriangleProgress stage="hook" isComplete={pipelineComplete === 'hook'} />
+          )
+        )}
 
         {/* ── Stage: Select Hook ── */}
         {stage === 'select-hook' && (
@@ -813,7 +935,35 @@ export default function PipelinePage() {
         )}
 
         {/* ── Stage: Loading Intros ── */}
-        {stage === 'loading-intros' && <Spinner label="Generating intro suggestions..." />}
+        {stage === 'loading-intros' && (
+          retryError ? (
+            <div className="flex flex-col items-center gap-4 py-12">
+              <div className="rounded-lg border border-red-900 bg-red-950/40 px-6 py-4 text-sm text-red-400 text-center max-w-md">
+                {retryError}
+              </div>
+              {retryCount < 3 ? (
+                <button
+                  onClick={handleRetry}
+                  className="rounded-lg bg-orange-500 px-6 py-3 text-sm font-semibold text-white hover:bg-orange-400"
+                >
+                  Retry
+                </button>
+              ) : (
+                <div className="flex flex-col items-center gap-3">
+                  <p className="text-sm text-zinc-500">Something isn&apos;t working. Try starting this stage over.</p>
+                  <button
+                    onClick={handleRetryFallback}
+                    className="rounded-lg border border-zinc-700 bg-zinc-800 px-6 py-3 text-sm text-zinc-300 hover:bg-zinc-700"
+                  >
+                    Go back
+                  </button>
+                </div>
+              )}
+            </div>
+          ) : (
+            <Spinner label="Generating intro suggestions..." />
+          )
+        )}
 
         {/* ── Stage: Select Intro ── */}
         {stage === 'select-intro' && (
@@ -915,7 +1065,35 @@ export default function PipelinePage() {
         )}
 
         {/* ── Stage: Loading Thumbnails ── */}
-        {stage === 'loading-thumbnails' && <TensionTriangleProgress stage="thumbnail" isComplete={pipelineComplete === 'thumbnail'} />}
+        {stage === 'loading-thumbnails' && (
+          retryError ? (
+            <div className="flex flex-col items-center gap-4 py-12">
+              <div className="rounded-lg border border-red-900 bg-red-950/40 px-6 py-4 text-sm text-red-400 text-center max-w-md">
+                {retryError}
+              </div>
+              {retryCount < 3 ? (
+                <button
+                  onClick={handleRetry}
+                  className="rounded-lg bg-orange-500 px-6 py-3 text-sm font-semibold text-white hover:bg-orange-400"
+                >
+                  Retry
+                </button>
+              ) : (
+                <div className="flex flex-col items-center gap-3">
+                  <p className="text-sm text-zinc-500">Something isn&apos;t working. Try starting this stage over.</p>
+                  <button
+                    onClick={handleRetryFallback}
+                    className="rounded-lg border border-zinc-700 bg-zinc-800 px-6 py-3 text-sm text-zinc-300 hover:bg-zinc-700"
+                  >
+                    Go back
+                  </button>
+                </div>
+              )}
+            </div>
+          ) : (
+            <TensionTriangleProgress stage="thumbnail" isComplete={pipelineComplete === 'thumbnail'} />
+          )
+        )}
 
         {/* ── Stage: Select Thumbnail ── */}
         {stage === 'select-thumbnail' && (
@@ -995,7 +1173,35 @@ export default function PipelinePage() {
         )}
 
         {/* ── Stage: Loading Titles ── */}
-        {stage === 'loading-titles' && <TensionTriangleProgress stage="title" isComplete={pipelineComplete === 'title'} />}
+        {stage === 'loading-titles' && (
+          retryError ? (
+            <div className="flex flex-col items-center gap-4 py-12">
+              <div className="rounded-lg border border-red-900 bg-red-950/40 px-6 py-4 text-sm text-red-400 text-center max-w-md">
+                {retryError}
+              </div>
+              {retryCount < 3 ? (
+                <button
+                  onClick={handleRetry}
+                  className="rounded-lg bg-orange-500 px-6 py-3 text-sm font-semibold text-white hover:bg-orange-400"
+                >
+                  Retry
+                </button>
+              ) : (
+                <div className="flex flex-col items-center gap-3">
+                  <p className="text-sm text-zinc-500">Something isn&apos;t working. Try starting this stage over.</p>
+                  <button
+                    onClick={handleRetryFallback}
+                    className="rounded-lg border border-zinc-700 bg-zinc-800 px-6 py-3 text-sm text-zinc-300 hover:bg-zinc-700"
+                  >
+                    Go back
+                  </button>
+                </div>
+              )}
+            </div>
+          ) : (
+            <TensionTriangleProgress stage="title" isComplete={pipelineComplete === 'title'} />
+          )
+        )}
 
         {/* ── Stage: Select Title ── */}
         {stage === 'select-title' && (
@@ -1069,7 +1275,35 @@ export default function PipelinePage() {
         )}
 
         {/* ── Stage: Saving ── */}
-        {stage === 'saving' && <Spinner label="Generating your YouTube Brief..." />}
+        {stage === 'saving' && (
+          retryError ? (
+            <div className="flex flex-col items-center gap-4 py-12">
+              <div className="rounded-lg border border-red-900 bg-red-950/40 px-6 py-4 text-sm text-red-400 text-center max-w-md">
+                {retryError}
+              </div>
+              {retryCount < 3 ? (
+                <button
+                  onClick={handleRetry}
+                  className="rounded-lg bg-orange-500 px-6 py-3 text-sm font-semibold text-white hover:bg-orange-400"
+                >
+                  Retry
+                </button>
+              ) : (
+                <div className="flex flex-col items-center gap-3">
+                  <p className="text-sm text-zinc-500">Something isn&apos;t working. Try starting this stage over.</p>
+                  <button
+                    onClick={handleRetryFallback}
+                    className="rounded-lg border border-zinc-700 bg-zinc-800 px-6 py-3 text-sm text-zinc-300 hover:bg-zinc-700"
+                  >
+                    Go back
+                  </button>
+                </div>
+              )}
+            </div>
+          ) : (
+            <Spinner label="Generating your YouTube Brief..." />
+          )
+        )}
 
         {/* ── Stage: Done ── */}
         {stage === 'done' && (
