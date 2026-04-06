@@ -35,6 +35,7 @@ interface Claim {
   promise_structure?: string;
   viewer_transformation?: string;
   whyThisIsTheBrief?: string;
+  score?: number | null;
 }
 
 interface Hook {
@@ -42,6 +43,7 @@ interface Hook {
   mechanism: string;
   information_gap: string;
   cold_viewer_check: string;
+  score?: number | null;
 }
 
 interface ThumbnailText {
@@ -49,6 +51,7 @@ interface ThumbnailText {
   word_count: number;
   visual_concept: string;
   title_complement: string;
+  score?: number | null;
 }
 
 interface Title {
@@ -57,6 +60,7 @@ interface Title {
   formula: string;
   primary_keyword: string;
   thumbnail_complement: string;
+  score?: number | null;
 }
 
 interface Intro {
@@ -819,6 +823,11 @@ export default function PipelinePage() {
                       )}
                       <div className="flex items-center gap-1.5 shrink-0">
                         <PencilButton active={isEditing} onClick={() => toggleEdit(editId, c.claim)} />
+                        {c.score != null && (
+                          <span className="text-xs text-zinc-600 tabular-nums font-medium">
+                            {Number(c.score).toFixed(1)}
+                          </span>
+                        )}
                         {c.video_format && (
                           <span className="rounded-full bg-orange-500/10 px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-orange-400 border border-orange-500/20">
                             {c.video_format}
@@ -941,7 +950,14 @@ export default function PipelinePage() {
                       <PencilButton active={isEditing} onClick={() => toggleEdit(editId, h.text)} />
                     </div>
                     <div className="mt-2 flex items-center justify-between">
-                      <p className="text-xs text-zinc-600">{h.mechanism}</p>
+                      <div className="flex items-center gap-2">
+                        <p className="text-xs text-zinc-600">{h.mechanism}</p>
+                        {h.score != null && (
+                          <span className="text-xs text-zinc-600 tabular-nums font-medium">
+                            {Number(h.score).toFixed(1)}
+                          </span>
+                        )}
+                      </div>
                       <button
                         onClick={() => selectHook(h, editedTexts[editId])}
                         className="rounded-lg bg-orange-500/10 px-4 py-1.5 text-xs font-medium text-orange-400 border border-orange-500/20 hover:bg-orange-500/20 transition-all"
@@ -1168,7 +1184,14 @@ export default function PipelinePage() {
                       )}
                       <PencilButton active={isEditing} onClick={() => toggleEdit(editId, t.text)} />
                     </div>
-                    <p className="mt-1 text-xs text-zinc-600">{t.visual_concept}</p>
+                    <div className="mt-1 flex items-center gap-2">
+                      <p className="text-xs text-zinc-600">{t.visual_concept}</p>
+                      {t.score != null && (
+                        <span className="text-xs text-zinc-600 tabular-nums font-medium">
+                          {Number(t.score).toFixed(1)}
+                        </span>
+                      )}
+                    </div>
                     <div className="mt-2 flex justify-end">
                       <button
                         onClick={() => selectThumbnail(t, editedTexts[editId])}
@@ -1281,6 +1304,14 @@ export default function PipelinePage() {
                         <span className={`text-xs ${charCount > 60 ? 'text-red-400 font-medium' : 'text-zinc-600'}`}>{charCount}/60 chars</span>
                         <span className="text-xs text-zinc-700">·</span>
                         <span className="text-xs text-zinc-600">{t.formula}</span>
+                        {t.score != null && (
+                          <>
+                            <span className="text-xs text-zinc-700">·</span>
+                            <span className="text-xs text-zinc-600 tabular-nums font-medium">
+                              {Number(t.score).toFixed(1)}
+                            </span>
+                          </>
+                        )}
                       </div>
                       <button
                         onClick={() => selectTitle(t, editedTexts[editId])}
