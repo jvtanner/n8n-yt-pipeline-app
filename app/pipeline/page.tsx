@@ -7,6 +7,8 @@ import { saveRun } from '@/lib/history';
 import { saveSession, loadSession, clearSession } from '@/lib/session';
 import VoiceProfileSideQuest from '@/components/VoiceProfileSideQuest';
 import ThumbnailImageStudio from '@/components/ThumbnailImageStudio';
+import { copyToClipboard, formatBriefForCopy } from '@/lib/clipboard';
+import IconButton from '@/components/IconButton';
 
 const N8N_BASE = process.env.NEXT_PUBLIC_N8N_WEBHOOK_BASE_URL;
 
@@ -672,6 +674,26 @@ export default function PipelinePage() {
 
   // ── Render ───────────────────────────────────────────────────────────────
 
+  function CopyButton({ text, size = 13 }: { text: string; size?: number }) {
+    const [copied, setCopied] = useState(false);
+    const handleCopy = async () => {
+      const ok = await copyToClipboard(text);
+      if (ok) {
+        setCopied(true);
+        setTimeout(() => setCopied(false), 1500);
+      }
+    };
+    return (
+      <IconButton
+        icon={copied ? 'check' : 'copy'}
+        onClick={handleCopy}
+        title={copied ? 'Copied' : 'Copy'}
+        size={size}
+        active={copied}
+      />
+    );
+  }
+
   return (
     <div className="min-h-screen bg-zinc-950 text-white">
       <div className="mx-auto max-w-3xl px-6 py-12">
@@ -1320,9 +1342,13 @@ export default function PipelinePage() {
                   <img src={thumbnailImageUrl} alt="Generated thumbnail" className="w-full rounded-lg aspect-video object-cover" />
                 </div>
               )}
-              <p className="text-lg font-semibold text-orange-300 leading-snug">{chosenTitle?.text ?? ''}</p>
+              <div className="flex items-start gap-2">
+                <p className="text-lg font-semibold text-orange-300 leading-snug">{chosenTitle?.text ?? ''}</p>
+                <CopyButton text={chosenTitle?.text || ''} />
+              </div>
               <div className="mt-2 flex items-center gap-3">
                 <span className="rounded-full bg-zinc-800 px-3 py-1 text-xs font-bold uppercase tracking-wider text-white">{chosenThumbnail?.text ?? ''}</span>
+                <CopyButton text={chosenThumbnail?.text || ''} />
                 {chosenClaim?.video_format && (
                   <span className="text-xs text-zinc-500">{chosenClaim.video_format}</span>
                 )}
@@ -1332,16 +1358,22 @@ export default function PipelinePage() {
             {/* Spoken: Hook + Intro */}
             <div className="rounded-xl border border-zinc-800 bg-zinc-900 px-5 py-4 mb-3 space-y-3">
               <div>
-                <p className="text-xs font-medium text-zinc-500 mb-1">Hook</p>
+                <div className="flex items-center justify-between mb-1">
+                  <p className="text-xs font-medium text-zinc-500">Hook</p>
+                  <CopyButton text={chosenHook?.text || ''} />
+                </div>
                 <p className="text-sm leading-relaxed text-zinc-200">{chosenHook?.text ?? ''}</p>
               </div>
               {chosenIntro && (
                 <div className="pt-3 border-t border-zinc-800">
                   <div className="flex items-center justify-between mb-1">
                     <p className="text-xs font-medium text-zinc-500">Intro</p>
-                    <span className="rounded-full bg-orange-500/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-orange-400 border border-orange-500/20">
-                      {chosenIntro.credibility_angle}
-                    </span>
+                    <div className="flex items-center gap-2">
+                      <span className="rounded-full bg-orange-500/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-orange-400 border border-orange-500/20">
+                        {chosenIntro.credibility_angle}
+                      </span>
+                      <CopyButton text={chosenIntro?.text || ''} />
+                    </div>
                   </div>
                   <p className="text-sm leading-relaxed text-zinc-200">{chosenIntro.text}</p>
                 </div>
@@ -1350,7 +1382,10 @@ export default function PipelinePage() {
 
             {/* Brief: Claim + metadata */}
             <div className="rounded-xl border border-zinc-800 bg-zinc-900 px-5 py-4 mb-3">
-              <p className="text-xs font-medium text-zinc-500 mb-2">Claim</p>
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-xs font-medium text-zinc-500">Claim</p>
+                <CopyButton text={chosenClaim?.claim || ''} />
+              </div>
               <p className="text-sm text-zinc-200 mb-3">{chosenClaim?.claim ?? ''}</p>
               {chosenClaim && (
                 <div className="grid grid-cols-2 gap-x-6 gap-y-2 pt-3 border-t border-zinc-800">
@@ -1382,6 +1417,23 @@ export default function PipelinePage() {
                   Download thumbnail
                 </a>
               )}
+              <button
+                onClick={() => {
+                  copyToClipboard(formatBriefForCopy({
+                    title: chosenTitle?.text,
+                    thumbnailText: chosenThumbnail?.text,
+                    hook: chosenHook?.text,
+                    intro: chosenIntro?.text,
+                    claim: chosenClaim?.claim,
+                  }));
+                }}
+                className="flex items-center gap-2 rounded-lg border border-zinc-800 bg-zinc-900 px-4 py-3 text-sm text-zinc-400 hover:bg-zinc-800 transition-colors"
+              >
+                <svg width={14} height={14} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+                  <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+                </svg>
+                Copy All
+              </button>
               <button
                 onClick={reset}
                 className="rounded-lg border border-zinc-800 px-6 py-3 text-sm text-zinc-400 transition-all hover:border-zinc-600 hover:text-white"
