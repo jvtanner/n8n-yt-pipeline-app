@@ -13,8 +13,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "YT Pipeline",
-  description: "YouTube content pipeline — claim, hook, thumbnail, title",
+  title: "YouTube AI Team",
+  description: "Your AI specialists for claims, hooks, intros, thumbnails, and titles",
 };
 
 export default function RootLayout({

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 
-const N8N_API_BASE = 'https://joshuavtanner.app.n8n.cloud/api/v1';
+const N8N_API_BASE = process.env.N8N_API_BASE_URL || 'https://joshuavtanner.app.n8n.cloud/api/v1';
 
 export async function GET(req: NextRequest) {
   const workflowId = req.nextUrl.searchParams.get('workflowId');
