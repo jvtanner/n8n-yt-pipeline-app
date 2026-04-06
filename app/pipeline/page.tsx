@@ -9,6 +9,7 @@ import VoiceProfileSideQuest from '@/components/VoiceProfileSideQuest';
 import ThumbnailImageStudio from '@/components/ThumbnailImageStudio';
 import { copyToClipboard, formatBriefForCopy } from '@/lib/clipboard';
 import IconButton from '@/components/IconButton';
+import { saveToIdeaBank, removeFromIdeaBank, isInIdeaBank, loadIdeaBank, type SavedItem } from '@/lib/ideaBank';
 
 const N8N_BASE = process.env.NEXT_PUBLIC_N8N_WEBHOOK_BASE_URL;
 
@@ -291,6 +292,7 @@ export default function PipelinePage() {
   const [showCredentialInput, setShowCredentialInput] = useState(false);
   const [hasProfile, setHasProfile] = useState(false);
   const [sideQuestDismissed, setSideQuestDismissed] = useState(false);
+  const [ideaBankVersion, setIdeaBankVersion] = useState(0);
 
   useEffect(() => {
     if (stage === 'script' && !script) return; // Don't save empty initial state
@@ -321,6 +323,17 @@ export default function PipelinePage() {
 
   const getDisplayText = (id: string, originalText: string) => {
     return editedTexts[id] ?? originalText;
+  };
+
+  const toggleIdeaBank = (type: SavedItem['type'], text: string, metadata: Record<string, string>) => {
+    if (isInIdeaBank(type, text)) {
+      const bank = loadIdeaBank();
+      const item = bank.find(i => i.type === type && i.text === text);
+      if (item) removeFromIdeaBank(item.id);
+    } else {
+      saveToIdeaBank({ type, text, metadata, savedFrom: script.slice(0, 100) });
+    }
+    setIdeaBankVersion(v => v + 1);
   };
 
   // ── API calls ────────────────────────────────────────────────────────────
@@ -877,12 +890,20 @@ export default function PipelinePage() {
                     )}
 
                     <div className="mt-3 flex items-center justify-between">
-                      <button
-                        onClick={() => setExpandedBriefId(isExpanded ? null : c.id)}
-                        className="text-xs text-zinc-500 hover:text-zinc-300 transition-colors"
-                      >
-                        {isExpanded ? 'Hide brief' : 'Show brief'}
-                      </button>
+                      <div className="flex items-center gap-3">
+                        <button
+                          onClick={() => setExpandedBriefId(isExpanded ? null : c.id)}
+                          className="text-xs text-zinc-500 hover:text-zinc-300 transition-colors"
+                        >
+                          {isExpanded ? 'Hide brief' : 'Show brief'}
+                        </button>
+                        <IconButton
+                          icon={isInIdeaBank('claim', c.claim) ? 'bookmarkFilled' : 'bookmark'}
+                          onClick={() => toggleIdeaBank('claim', c.claim, { angle: c.angle, video_format: c.video_format || '' })}
+                          label={isInIdeaBank('claim', c.claim) ? 'Saved' : 'Save'}
+                          active={isInIdeaBank('claim', c.claim)}
+                        />
+                      </div>
                       <button
                         onClick={() => selectClaim(c, editedTexts[editId])}
                         className="rounded-lg bg-orange-500/10 px-4 py-1.5 text-xs font-medium text-orange-400 border border-orange-500/20 hover:bg-orange-500/20 transition-all"
@@ -986,6 +1007,12 @@ export default function PipelinePage() {
                             {Number(h.score).toFixed(1)}
                           </span>
                         )}
+                        <IconButton
+                          icon={isInIdeaBank('hook', h.text) ? 'bookmarkFilled' : 'bookmark'}
+                          onClick={() => toggleIdeaBank('hook', h.text, { mechanism: h.mechanism })}
+                          label={isInIdeaBank('hook', h.text) ? 'Saved' : 'Save'}
+                          active={isInIdeaBank('hook', h.text)}
+                        />
                       </div>
                       <button
                         onClick={() => selectHook(h, editedTexts[editId])}
@@ -1221,7 +1248,13 @@ export default function PipelinePage() {
                         </span>
                       )}
                     </div>
-                    <div className="mt-2 flex justify-end">
+                    <div className="mt-2 flex items-center justify-between">
+                      <IconButton
+                        icon={isInIdeaBank('thumbnailText', t.text) ? 'bookmarkFilled' : 'bookmark'}
+                        onClick={() => toggleIdeaBank('thumbnailText', t.text, { visual_concept: t.visual_concept })}
+                        label={isInIdeaBank('thumbnailText', t.text) ? 'Saved' : 'Save'}
+                        active={isInIdeaBank('thumbnailText', t.text)}
+                      />
                       <button
                         onClick={() => selectThumbnail(t, editedTexts[editId])}
                         className="rounded-lg bg-orange-500/10 px-4 py-1.5 text-xs font-medium text-orange-400 border border-orange-500/20 hover:bg-orange-500/20 transition-all"
@@ -1341,6 +1374,12 @@ export default function PipelinePage() {
                             </span>
                           </>
                         )}
+                        <IconButton
+                          icon={isInIdeaBank('title', t.text) ? 'bookmarkFilled' : 'bookmark'}
+                          onClick={() => toggleIdeaBank('title', t.text, { formula: t.formula })}
+                          label={isInIdeaBank('title', t.text) ? 'Saved' : 'Save'}
+                          active={isInIdeaBank('title', t.text)}
+                        />
                       </div>
                       <button
                         onClick={() => selectTitle(t, editedTexts[editId])}
