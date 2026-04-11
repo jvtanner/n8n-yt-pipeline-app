@@ -6,6 +6,7 @@ import PipelineHistory from '@/components/PipelineHistory';
 import YouTubeChannelInput from '@/components/YouTubeChannelInput';
 import AnalyticsDashboard from '@/components/AnalyticsDashboard';
 import IdeaBankSection from '@/components/IdeaBankSection';
+import { clearSession } from '@/lib/session';
 
 interface ProfileData {
   creatorName: string;
@@ -65,6 +66,7 @@ export default function Home() {
       allProfiles.push(name);
       localStorage.setItem('ytPipelineProfiles', JSON.stringify(allProfiles));
     }
+    clearSession();
     router.push('/pipeline');
   };
 
@@ -126,6 +128,7 @@ export default function Home() {
                     key={p}
                     onClick={() => {
                       localStorage.setItem('ytPipelineCreator', p);
+                      clearSession();
                       router.push('/pipeline');
                     }}
                     className="rounded-lg border border-zinc-800 px-4 py-2 text-sm text-zinc-400 hover:border-zinc-600 hover:text-white transition-all"
@@ -205,7 +208,7 @@ export default function Home() {
         {/* Actions */}
         <div className="mt-8 flex items-center gap-4">
           <button
-            onClick={() => router.push('/pipeline')}
+            onClick={() => { clearSession(); router.push('/pipeline'); }}
             className="rounded-lg bg-orange-500 px-8 py-3 text-sm font-semibold text-white transition-all hover:bg-orange-400"
           >
             Create Brief

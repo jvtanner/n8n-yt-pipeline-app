@@ -30,17 +30,20 @@ export function loadSession(): PipelineSession | null {
     const raw = localStorage.getItem(SESSION_KEY);
     if (!raw) return null;
     const session: PipelineSession = JSON.parse(raw);
-    // If stage was loading-*, fall back to previous selection stage
-    if (session.stage.startsWith('loading-')) {
-      const fallbackMap: Record<string, string> = {
-        'loading-claims': 'script',
-        'loading-hooks': 'select-claim',
-        'loading-intros': 'select-hook',
-        'loading-thumbnails': 'select-intro',
-        'loading-thumbnail-image': 'select-thumbnail',
-        'loading-titles': 'select-thumbnail',
-      };
-      session.stage = fallbackMap[session.stage] || 'script';
+    // If stage was loading-* or saving, fall back to previous selection stage.
+    // In-flight requests don't survive a reload, so restoring those stages
+    // would leave the user staring at a spinner with nothing happening.
+    const fallbackMap: Record<string, string> = {
+      'loading-claims': 'script',
+      'loading-hooks': 'select-claim',
+      'loading-intros': 'select-hook',
+      'loading-thumbnails': 'select-intro',
+      'loading-thumbnail-image': 'select-thumbnail',
+      'loading-titles': 'select-thumbnail',
+      'saving': 'select-title',
+    };
+    if (session.stage in fallbackMap) {
+      session.stage = fallbackMap[session.stage];
     }
     return session;
   } catch {

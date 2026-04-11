@@ -200,7 +200,19 @@ async function fetchWithPolling(
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   }).then(async (res) => {
-    if (res.ok) return res.json();
+    if (res.ok) {
+      // n8n returns 200 + empty body when responseMode=responseNode and the
+      // Respond node never fires (e.g. an upstream node errored). res.json()
+      // would throw a confusing SyntaxError; surface a real error instead so
+      // the catch path runs and the retry UI shows.
+      const text = await res.text();
+      if (!text) throw new Error('Workflow returned empty response — execution likely errored before completing');
+      try {
+        return JSON.parse(text) as Record<string, unknown>;
+      } catch {
+        throw new Error('Workflow returned invalid JSON: ' + text.slice(0, 200));
+      }
+    }
     // On Cloudflare 524 or proxy timeout, return a never-resolving promise
     // so polling can win via Promise.any()
     if (res.status === 524 || res.status === 502 || res.status === 504) {
