@@ -18,7 +18,8 @@ interface ThumbnailImageStudioProps {
   creatorName: string;
   chosenThumbnailText: string;
   onComplete: (imageUrl: string) => void;
-  onSkip: () => void;
+  onSkip?: () => void;
+  mode?: 'pipeline' | 'done';
 }
 
 // ─── Template Definitions ─────────────────────────────────────────────────────
@@ -122,6 +123,7 @@ export default function ThumbnailImageStudio({
   chosenThumbnailText,
   onComplete,
   onSkip,
+  mode = 'pipeline',
 }: ThumbnailImageStudioProps) {
   const [subState, setSubState] = useState<SubState>('template');
   const [selectedTemplate, setSelectedTemplate] = useState<Template | null>(null);
@@ -167,21 +169,25 @@ export default function ThumbnailImageStudio({
 
   return (
     <div>
-      {/* Context pills */}
-      <div className="mb-6 space-y-2">
-        <div className="flex items-center gap-2 text-xs">
-          <span className="text-zinc-600 font-medium">Thumbnail text:</span>
-          <span className="rounded-full bg-orange-500/10 px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-orange-400 border border-orange-500/20">
-            {chosenThumbnailText}
-          </span>
+      {/* Context pills (hidden in done mode) */}
+      {mode !== 'done' && (
+        <div className="mb-6 space-y-2">
+          <div className="flex items-center gap-2 text-xs">
+            <span className="text-zinc-600 font-medium">Thumbnail text:</span>
+            <span className="rounded-full bg-orange-500/10 px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-orange-400 border border-orange-500/20">
+              {chosenThumbnailText}
+            </span>
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Section header */}
       <div className="mb-6">
-        <div className="flex items-center gap-3 mb-1">
-          <span className="text-xs font-bold uppercase tracking-widest text-zinc-600">Step 6 / 7</span>
-        </div>
+        {mode !== 'done' && (
+          <div className="flex items-center gap-3 mb-1">
+            <span className="text-xs font-bold uppercase tracking-widest text-zinc-600">Step 6 / 7</span>
+          </div>
+        )}
         <h2 className="text-lg font-semibold text-white">
           {subState === 'template' && 'Choose a layout template'}
           {subState === 'upload' && 'Add your image'}
@@ -219,14 +225,16 @@ export default function ThumbnailImageStudio({
               </button>
             ))}
           </div>
-          <div className="flex justify-end">
-            <button
-              onClick={onSkip}
-              className="text-sm text-zinc-500 hover:text-zinc-300 transition-colors"
-            >
-              Skip image generation
-            </button>
-          </div>
+          {onSkip && (
+            <div className="flex justify-end">
+              <button
+                onClick={onSkip}
+                className="text-sm text-zinc-500 hover:text-zinc-300 transition-colors"
+              >
+                Skip image generation
+              </button>
+            </div>
+          )}
         </div>
       )}
 
@@ -273,12 +281,14 @@ export default function ThumbnailImageStudio({
 
           {/* Actions */}
           <div className="flex items-center justify-between pt-2">
-            <button
-              onClick={onSkip}
-              className="text-sm text-zinc-500 hover:text-zinc-300 transition-colors"
-            >
-              Skip image generation
-            </button>
+            {onSkip && (
+              <button
+                onClick={onSkip}
+                className="text-sm text-zinc-500 hover:text-zinc-300 transition-colors"
+              >
+                Skip image generation
+              </button>
+            )}
             <button
               onClick={startGeneration}
               disabled={!imageUrl}
@@ -332,7 +342,7 @@ export default function ThumbnailImageStudio({
               onClick={() => onComplete(generatedImage)}
               className="rounded-lg bg-orange-500 px-6 py-2.5 text-sm font-semibold text-white hover:bg-orange-400 transition-all"
             >
-              Use this thumbnail
+              {mode === 'done' ? 'Keep this' : 'Use this thumbnail'}
             </button>
           </div>
         </div>

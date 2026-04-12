@@ -306,7 +306,7 @@ export default function PipelinePage() {
   // ── Done-screen editing state ───────────────────────────────────────────
   const [doneEditing, setDoneEditing] = useState<string | null>(null);
   const [doneEditText, setDoneEditText] = useState('');
-  const [showThumbnailStudio, setShowThumbnailStudio] = useState(false);
+  const [thumbnailStudioOpen, setThumbnailStudioOpen] = useState(false);
 
   // ── Credential input state ───────────────────────────────────────────────
   const [newCredential, setNewCredential] = useState('');
@@ -526,14 +526,6 @@ export default function PipelinePage() {
     }
   }, [script, chosenClaim, chosenHook, creatorName]);
 
-  const selectThumbnail = useCallback((thumb: ThumbnailText, overrideText?: string) => {
-    const thumbText = overrideText ?? thumb.text;
-    setChosenThumbnail({ ...thumb, text: thumbText });
-    setError(null);
-    setEditingId(null);
-    setStage('thumbnail-image');
-  }, []);
-
   const loadTitles = useCallback(async (thumbText: string) => {
     setError(null);
     setStage('loading-titles');
@@ -570,15 +562,13 @@ export default function PipelinePage() {
     }
   }, [script, chosenClaim, chosenHook, creatorName]);
 
-  const completeThumbnailImage = useCallback((imageUrl: string) => {
-    setThumbnailImageUrl(imageUrl);
-    loadTitles(chosenThumbnail?.text ?? '');
-  }, [chosenThumbnail, loadTitles]);
-
-  const skipThumbnailImage = useCallback(() => {
-    setThumbnailImageUrl(null);
-    loadTitles(chosenThumbnail?.text ?? '');
-  }, [chosenThumbnail, loadTitles]);
+  const selectThumbnail = useCallback((thumb: ThumbnailText, overrideText?: string) => {
+    const thumbText = overrideText ?? thumb.text;
+    setChosenThumbnail({ ...thumb, text: thumbText });
+    setError(null);
+    setEditingId(null);
+    loadTitles(thumbText);
+  }, [loadTitles]);
 
   const selectTitle = useCallback(async (title: Title, overrideText?: string) => {
     const titleText = overrideText ?? title.text;
@@ -696,7 +686,7 @@ export default function PipelinePage() {
     setShowCredentialInput(false);
     setDoneEditing(null);
     setDoneEditText('');
-    setShowThumbnailStudio(false);
+    setThumbnailStudioOpen(false);
   }, []);
 
   const handleRetry = useCallback(() => {
@@ -721,7 +711,7 @@ export default function PipelinePage() {
       'loading-hooks': 'select-claim',
       'loading-intros': 'select-hook',
       'loading-thumbnails': 'select-intro',
-      'loading-thumbnail-image': 'select-thumbnail',
+      'thumbnail-image': 'select-thumbnail',
       'loading-titles': 'select-thumbnail',
       'saving': 'select-title',
     };
@@ -1375,15 +1365,7 @@ export default function PipelinePage() {
           </div>
         )}
 
-        {/* ── Stage: Thumbnail Image ── */}
-        {stage === 'thumbnail-image' && (
-          <ThumbnailImageStudio
-            creatorName={creatorName}
-            chosenThumbnailText={chosenThumbnail?.text ?? ''}
-            onComplete={completeThumbnailImage}
-            onSkip={skipThumbnailImage}
-          />
-        )}
+        {/* thumbnail-image stage removed — thumbnail creation is now on the done screen */}
 
         {/* ── Stage: Loading Titles ── */}
         {stage === 'loading-titles' && (
@@ -1542,16 +1524,54 @@ export default function PipelinePage() {
 
             {/* Hero: Title + Thumbnail */}
             <div className="rounded-xl border border-orange-500/40 bg-orange-500/5 px-6 py-5 mb-3">
+              {/* Thumbnail image (if generated) */}
               {thumbnailImageUrl && (
                 <div className="relative mb-4">
                   <img src={thumbnailImageUrl} alt="Generated thumbnail" className="w-full rounded-lg aspect-video object-cover" />
                   <button
-                    onClick={() => setShowThumbnailStudio(true)}
+                    onClick={() => { setThumbnailImageUrl(null); setThumbnailStudioOpen(true); }}
                     className="absolute bottom-3 right-3 flex items-center gap-1.5 bg-zinc-900/85 backdrop-blur border border-zinc-700 text-zinc-400 px-3 py-1.5 rounded-lg text-xs hover:text-zinc-200 transition-colors"
                   >
                     <svg width={13} height={13} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}><path d="M1 4v6h6M23 20v-6h-6"/><path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15"/></svg>
                     Regenerate
                   </button>
+                </div>
+              )}
+
+              {/* Collapsible thumbnail studio (when no image exists) */}
+              {!thumbnailImageUrl && (
+                <div className="mb-4 rounded-lg border border-zinc-800 overflow-hidden">
+                  <button
+                    onClick={() => setThumbnailStudioOpen(!thumbnailStudioOpen)}
+                    className="w-full flex items-center justify-between px-4 py-3 hover:bg-zinc-900/50 transition-colors"
+                  >
+                    <div className="flex items-center gap-2.5">
+                      <svg className="w-4 h-4 text-zinc-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="m2.25 15.75 5.159-5.159a2.25 2.25 0 0 1 3.182 0l5.159 5.159m-1.5-1.5 1.409-1.409a2.25 2.25 0 0 1 3.182 0l2.909 2.909M3.75 21h16.5A2.25 2.25 0 0 0 22.5 18.75V5.25A2.25 2.25 0 0 0 20.25 3H3.75A2.25 2.25 0 0 0 1.5 5.25v13.5A2.25 2.25 0 0 0 3.75 21Z" />
+                      </svg>
+                      <span className="text-sm font-semibold text-zinc-400">Create Thumbnail</span>
+                      <span className="text-xs text-zinc-600">Optional</span>
+                    </div>
+                    <svg
+                      className={`w-4 h-4 text-zinc-600 transition-transform ${thumbnailStudioOpen ? 'rotate-180' : ''}`}
+                      xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor"
+                    >
+                      <path strokeLinecap="round" strokeLinejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" />
+                    </svg>
+                  </button>
+                  {thumbnailStudioOpen && (
+                    <div className="px-4 pb-4">
+                      <ThumbnailImageStudio
+                        creatorName={creatorName}
+                        chosenThumbnailText={chosenThumbnail?.text || ''}
+                        onComplete={(url) => {
+                          setThumbnailImageUrl(url);
+                          setThumbnailStudioOpen(false);
+                        }}
+                        mode="done"
+                      />
+                    </div>
+                  )}
                 </div>
               )}
               <div className="flex items-start gap-2">
@@ -1757,22 +1777,6 @@ export default function PipelinePage() {
               </button>
             </div>
 
-            {/* Thumbnail Studio overlay */}
-            {showThumbnailStudio && (
-              <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4">
-                <div className="bg-zinc-950 rounded-2xl border border-zinc-800 max-w-2xl w-full max-h-[90vh] overflow-y-auto p-6">
-                  <ThumbnailImageStudio
-                    creatorName={creatorName}
-                    chosenThumbnailText={chosenThumbnail?.text || ''}
-                    onComplete={(url) => {
-                      setThumbnailImageUrl(url);
-                      setShowThumbnailStudio(false);
-                    }}
-                    onSkip={() => setShowThumbnailStudio(false)}
-                  />
-                </div>
-              </div>
-            )}
           </div>
         )}
       </div>
