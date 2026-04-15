@@ -756,7 +756,7 @@ export default function PipelinePage() {
         // Go to home page so user starts fresh
         router.push('/');
       } else {
-        setCodeError('Invalid code. Please try again.');
+        setCodeError('Email not found. Please use the email you purchased with.');
       }
     } catch {
       setCodeError('Something went wrong. Please try again.');
@@ -793,17 +793,17 @@ export default function PipelinePage() {
       <div className="min-h-screen bg-zinc-950 text-white flex items-center justify-center">
         <div className="max-w-md w-full px-6">
           <div className="mb-8 text-center">
-            <h1 className="text-2xl font-semibold text-white mb-2">Enter your access code</h1>
-            <p className="text-sm text-zinc-500">You&apos;ve used your free run. Enter an access code to continue creating.</p>
+            <h1 className="text-2xl font-semibold text-white mb-2">Enter your email</h1>
+            <p className="text-sm text-zinc-500">You&apos;ve used your free run. Enter the email you purchased with to continue.</p>
           </div>
 
           <div className="flex flex-col gap-4">
             <input
-              type="text"
+              type="email"
               value={codeInput}
               onChange={e => setCodeInput(e.target.value)}
               onKeyDown={e => e.key === 'Enter' && codeInput.trim() && validateCode()}
-              placeholder="Enter code"
+              placeholder="you@email.com"
               className="w-full rounded-xl border border-zinc-800 bg-zinc-900 px-5 py-3 text-sm text-zinc-200 placeholder-zinc-600 outline-none focus:border-zinc-600"
               autoFocus
             />
@@ -825,9 +825,9 @@ export default function PipelinePage() {
                 href={stripeLink}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="text-sm text-zinc-500 hover:text-zinc-300 text-center transition-colors"
+                className="text-sm text-orange-500 hover:text-orange-400 text-center transition-colors"
               >
-                Don&apos;t have a code? Get access &rarr;
+                Don&apos;t have access? Purchase here &rarr;
               </a>
             )}
           </div>
