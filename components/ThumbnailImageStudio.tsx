@@ -80,7 +80,7 @@ function LayoutPreview({ textPosition }: { textPosition: string }) {
 const N8N_BASE = process.env.NEXT_PUBLIC_N8N_WEBHOOK_BASE_URL;
 const WORKFLOW_ID = process.env.NEXT_PUBLIC_WF_THUMBNAIL_IMAGE_GEN || 'nTA0DgdesN7hsoUy';
 
-async function pollForResult(startedAfter: string, timeoutMs = 600000): Promise<Record<string, unknown>> {
+async function pollForResult(startedAfter: string, timeoutMs = 900000): Promise<Record<string, unknown>> {
   const deadline = Date.now() + timeoutMs;
   await new Promise(r => setTimeout(r, 10000));
 
