@@ -793,8 +793,8 @@ export default function PipelinePage() {
       <div className="min-h-screen bg-zinc-950 text-white flex items-center justify-center">
         <div className="max-w-md w-full px-6">
           <div className="mb-8 text-center">
-            <h1 className="text-2xl font-semibold text-white mb-2">Enter your email</h1>
-            <p className="text-sm text-zinc-500">You&apos;ve used your free run. Enter the email you purchased with to continue.</p>
+            <h1 className="text-2xl font-semibold text-white mb-2">Welcome back</h1>
+            <p className="text-sm text-zinc-500">Enter the email you used to purchase. This is your login from now on.</p>
           </div>
 
           <div className="flex flex-col gap-4">
