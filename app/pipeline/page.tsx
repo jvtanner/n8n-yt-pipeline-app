@@ -619,6 +619,23 @@ export default function PipelinePage() {
           video_format: chosenClaim?.video_format,
         },
       });
+      // Save to server-side runs DB for authenticated users (fire-and-forget)
+      if (!isGuest) {
+        fetch('/api/user/runs', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            creatorName,
+            rawIdea: script.trim(),
+            chosenClaim: chosenClaim?.claim ?? '',
+            chosenHook: chosenHook?.text ?? '',
+            chosenIntro: chosenIntro?.text,
+            chosenThumbnailText: chosenThumbnail?.text ?? '',
+            chosenTitle: titleText,
+            thumbnailImageUrl: thumbnailImageUrl ?? undefined,
+          }),
+        }).catch(() => {}); // Non-critical — n8n save is primary
+      }
       localStorage.setItem('ytPipelineFreeRunUsed', 'true');
       setRetryCount(0);
       setRetryPayload(null);

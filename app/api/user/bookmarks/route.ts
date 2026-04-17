@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getSessionEmail } from '@/lib/auth';
-import { findUserByEmail, queryRunsByCreator } from '@/lib/notion';
+import { queryRunsByEmail } from '@/lib/notion';
 
 export async function GET() {
   const email = await getSessionEmail();
@@ -9,13 +9,7 @@ export async function GET() {
   }
 
   try {
-    const user = await findUserByEmail(email);
-    if (!user) {
-      return NextResponse.json({ error: 'User not found' }, { status: 404 });
-    }
-
-    const creatorName = user.creatorName || email;
-    const runs = await queryRunsByCreator(creatorName, 100);
+    const runs = await queryRunsByEmail(email, 100);
 
     // Flatten starred items from all runs
     const bookmarks: {

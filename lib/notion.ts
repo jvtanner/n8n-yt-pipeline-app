@@ -221,15 +221,16 @@ export async function findAuthToken(token: string): Promise<AuthToken | null> {
 
 // ── Pipeline run queries (ChatGPT Notion DB) ────────────────────────────
 
-function getContentDbId(): string {
-  const id = process.env.NOTION_CONTENT_DB_ID;
-  if (!id) throw new Error('NOTION_CONTENT_DB_ID not configured');
+function getRunsDbId(): string {
+  const id = process.env.NOTION_RUNS_DB_ID;
+  if (!id) throw new Error('NOTION_RUNS_DB_ID not configured');
   return id;
 }
 
 export interface PipelineRunRecord {
   pageId: string;
   name: string;
+  email: string;
   rawIdea: string;
   status: string;
   lane: string;
@@ -238,6 +239,7 @@ export interface PipelineRunRecord {
   chosenIntro: string;
   chosenThumbnailText: string;
   chosenTitle: string;
+  thumbnailImageUrl: string;
   starredItems: string;
   createdAt: string;
 }
@@ -248,27 +250,29 @@ function pageToRun(page: any): PipelineRunRecord {
   return {
     pageId: page.id,
     name: extractTitle(p['Name']),
+    email: p['Email']?.email ?? '',
     rawIdea: extractRichText(p['Raw Idea']),
     status: p['Status']?.select?.name ?? '',
-    lane: p['Lane']?.select?.name ?? '',
+    lane: extractRichText(p['Lane']),
     chosenClaim: extractRichText(p['Chosen Claim']),
     chosenHook: extractRichText(p['Chosen Hook']),
     chosenIntro: extractRichText(p['Chosen Intro']),
     chosenThumbnailText: extractRichText(p['Chosen Thumbnail Text']),
     chosenTitle: extractRichText(p['Chosen Title']),
+    thumbnailImageUrl: p['Thumbnail Image URL']?.url ?? '',
     starredItems: extractRichText(p['Starred Items']),
     createdAt: page.created_time ?? '',
   };
 }
 
-export async function queryRunsByCreator(creatorName: string, limit = 50): Promise<PipelineRunRecord[]> {
-  const res = await fetch(`${NOTION_API}/databases/${getContentDbId()}/query`, {
+export async function queryRunsByEmail(email: string, limit = 50): Promise<PipelineRunRecord[]> {
+  const res = await fetch(`${NOTION_API}/databases/${getRunsDbId()}/query`, {
     method: 'POST',
     headers: getHeaders(),
     body: JSON.stringify({
       filter: {
-        property: 'Name',
-        title: { contains: creatorName },
+        property: 'Email',
+        email: { equals: email.toLowerCase().trim() },
       },
       sorts: [{ timestamp: 'created_time', direction: 'descending' }],
       page_size: Math.min(limit, 100),
@@ -278,6 +282,46 @@ export async function queryRunsByCreator(creatorName: string, limit = 50): Promi
   if (!res.ok) throw new Error(`Notion query runs failed: ${res.status}`);
   const data = await res.json();
   return (data.results ?? []).map(pageToRun);
+}
+
+export async function createRun(run: {
+  email: string;
+  creatorName: string;
+  name: string;
+  rawIdea: string;
+  chosenClaim: string;
+  chosenHook: string;
+  chosenIntro?: string;
+  chosenThumbnailText: string;
+  chosenTitle: string;
+  thumbnailImageUrl?: string;
+  lane?: string;
+}): Promise<PipelineRunRecord> {
+  const res = await fetch(`${NOTION_API}/pages`, {
+    method: 'POST',
+    headers: getHeaders(),
+    body: JSON.stringify({
+      parent: { database_id: getRunsDbId() },
+      properties: {
+        'Name': { title: [{ text: { content: run.name || run.chosenTitle || 'Untitled' } }] },
+        'Email': { email: run.email.toLowerCase().trim() },
+        'Creator Name': { rich_text: [{ text: { content: run.creatorName } }] },
+        'Raw Idea': { rich_text: chunkRichText(run.rawIdea) },
+        'Chosen Claim': { rich_text: chunkRichText(run.chosenClaim) },
+        'Chosen Hook': { rich_text: chunkRichText(run.chosenHook) },
+        'Chosen Intro': { rich_text: chunkRichText(run.chosenIntro || '') },
+        'Chosen Thumbnail Text': { rich_text: [{ text: { content: run.chosenThumbnailText || '' } }] },
+        'Chosen Title': { rich_text: [{ text: { content: run.chosenTitle || '' } }] },
+        ...(run.thumbnailImageUrl ? { 'Thumbnail Image URL': { url: run.thumbnailImageUrl } } : {}),
+        'Status': { select: { name: 'Complete' } },
+        ...(run.lane ? { 'Lane': { rich_text: [{ text: { content: run.lane } }] } } : {}),
+      },
+    }),
+  });
+
+  if (!res.ok) throw new Error(`Notion create run failed: ${res.status}`);
+  const page = await res.json();
+  return pageToRun(page);
 }
 
 export async function updateRunStarredItems(pageId: string, starredItems: string): Promise<void> {
