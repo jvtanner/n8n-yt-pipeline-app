@@ -10,6 +10,7 @@ import ThumbnailImageStudio from '@/components/ThumbnailImageStudio';
 import { copyToClipboard, formatBriefForCopy } from '@/lib/clipboard';
 import IconButton from '@/components/IconButton';
 import { saveToIdeaBank, removeFromIdeaBank, isInIdeaBank, loadIdeaBank, type SavedItem } from '@/lib/ideaBank';
+import { useUser } from '@/lib/useUser';
 
 const N8N_BASE = process.env.NEXT_PUBLIC_N8N_WEBHOOK_BASE_URL;
 
@@ -233,7 +234,8 @@ async function fetchWithPolling(
 
 export default function PipelinePage() {
   const router = useRouter();
-  const [creatorName, setCreatorName] = useState('');
+  const { user, isGuest, loading: userLoading } = useUser();
+  const creatorName = user?.creatorName || user?.email || '';
   const [stage, setStage] = useState<Stage>('script');
   const [script, setScript] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -242,23 +244,27 @@ export default function PipelinePage() {
   const [retryCount, setRetryCount] = useState(0);
   const [retryError, setRetryError] = useState<string | null>(null);
 
-  const [needsCode, setNeedsCode] = useState(false);
-  const [codeInput, setCodeInput] = useState('');
-  const [codeError, setCodeError] = useState<string | null>(null);
-  const [codeValidating, setCodeValidating] = useState(false);
-
   useEffect(() => {
-    const name = localStorage.getItem('ytPipelineCreator');
-    if (!name) { router.replace('/'); return; }
-    setCreatorName(name);
-    setHasProfile(!!localStorage.getItem('ytPipelineProfile:' + name));
-    setSideQuestDismissed(!!localStorage.getItem('ytPipelineSideQuestDismissed'));
+    if (userLoading) return;
 
-    const freeRunUsed = localStorage.getItem('ytPipelineFreeRunUsed') === 'true';
-    const hasCode = !!localStorage.getItem('ytPipelineAccessCode');
-    if (freeRunUsed && !hasCode) {
-      setNeedsCode(true);
+    // Authenticated users always have access
+    // Guests get one free run — if already used, redirect to login
+    if (isGuest) {
+      const freeRunUsed = localStorage.getItem('ytPipelineFreeRunUsed') === 'true';
+      if (freeRunUsed) {
+        router.replace('/');
+        return;
+      }
     }
+
+    if (user) {
+      setHasProfile(!!user.voiceProfile);
+    } else {
+      // Guest — check localStorage for profile
+      const name = localStorage.getItem('ytPipelineCreator');
+      setHasProfile(!!name && !!localStorage.getItem('ytPipelineProfile:' + name));
+    }
+    setSideQuestDismissed(!!localStorage.getItem('ytPipelineSideQuestDismissed'));
 
     // Restore session if one exists
     const savedSession = loadSession();
@@ -277,7 +283,7 @@ export default function PipelinePage() {
       setTitles(savedSession.titles as Title[]);
       setChosenTitle(savedSession.chosenTitle as Title | null);
     }
-  }, [router]);
+  }, [router, userLoading, isGuest, user]);
 
   const [claims, setClaims] = useState<Claim[]>([]);
   const [chosenClaim, setChosenClaim] = useState<Claim | null>(null);
@@ -651,12 +657,13 @@ export default function PipelinePage() {
 
   const reset = useCallback(() => {
     clearSession();
-    // Re-check paywall gate after completing a run
-    const freeRunUsed = localStorage.getItem('ytPipelineFreeRunUsed') === 'true';
-    const hasCode = !!localStorage.getItem('ytPipelineAccessCode');
-    if (freeRunUsed && !hasCode) {
-      setNeedsCode(true);
-      return; // Don't reset to script — show the gate
+    // Guests who've used their free run get redirected to sign up
+    if (isGuest) {
+      const freeRunUsed = localStorage.getItem('ytPipelineFreeRunUsed') === 'true';
+      if (freeRunUsed) {
+        router.replace('/');
+        return;
+      }
     }
     setStage('script');
     setScript('');
@@ -687,7 +694,7 @@ export default function PipelinePage() {
     setDoneEditing(null);
     setDoneEditText('');
     setThumbnailStudioOpen(false);
-  }, []);
+  }, [isGuest, router]);
 
   const handleRetry = useCallback(() => {
     if (!retryPayload) return;
@@ -739,32 +746,6 @@ export default function PipelinePage() {
     setDoneEditText('');
   };
 
-  // ── Access code validation ──────────────────────────────────────────────
-  const validateCode = async () => {
-    setCodeValidating(true);
-    setCodeError(null);
-    try {
-      const res = await fetch('/api/validate-code', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ code: codeInput }),
-      });
-      const data = await res.json();
-      if (data.valid) {
-        localStorage.setItem('ytPipelineAccessCode', codeInput.trim());
-        setNeedsCode(false);
-        // Go to home page so user starts fresh
-        router.push('/');
-      } else {
-        setCodeError('Email not found. Please use the email you purchased with.');
-      }
-    } catch {
-      setCodeError('Something went wrong. Please try again.');
-    } finally {
-      setCodeValidating(false);
-    }
-  };
-
   // ── Render ───────────────────────────────────────────────────────────────
 
   function CopyButton({ text, size = 13 }: { text: string; size?: number }) {
@@ -787,51 +768,10 @@ export default function PipelinePage() {
     );
   }
 
-  if (needsCode) {
-    const stripeLink = process.env.NEXT_PUBLIC_STRIPE_PAYMENT_LINK;
+  if (userLoading) {
     return (
-      <div className="min-h-screen bg-zinc-950 text-white flex items-center justify-center">
-        <div className="max-w-md w-full px-6">
-          <div className="mb-8 text-center">
-            <h1 className="text-2xl font-semibold text-white mb-2">Welcome back</h1>
-            <p className="text-sm text-zinc-500">Enter the email you used to purchase. This is your login from now on.</p>
-          </div>
-
-          <div className="flex flex-col gap-4">
-            <input
-              type="email"
-              value={codeInput}
-              onChange={e => setCodeInput(e.target.value)}
-              onKeyDown={e => e.key === 'Enter' && codeInput.trim() && validateCode()}
-              placeholder="you@email.com"
-              className="w-full rounded-xl border border-zinc-800 bg-zinc-900 px-5 py-3 text-sm text-zinc-200 placeholder-zinc-600 outline-none focus:border-zinc-600"
-              autoFocus
-            />
-
-            {codeError && (
-              <p className="text-sm text-red-400 text-center">{codeError}</p>
-            )}
-
-            <button
-              onClick={validateCode}
-              disabled={!codeInput.trim() || codeValidating}
-              className="rounded-xl bg-orange-500 px-6 py-3 text-sm font-semibold text-white transition-all hover:bg-orange-400 disabled:opacity-30 disabled:cursor-not-allowed"
-            >
-              {codeValidating ? 'Checking...' : 'Continue'}
-            </button>
-
-            {stripeLink && (
-              <a
-                href={stripeLink}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-sm text-orange-500 hover:text-orange-400 text-center transition-colors"
-              >
-                Don&apos;t have access? Purchase here &rarr;
-              </a>
-            )}
-          </div>
-        </div>
+      <div className="min-h-screen bg-zinc-950 flex items-center justify-center">
+        <div className="h-8 w-8 animate-spin rounded-full border-2 border-zinc-700 border-t-orange-500" />
       </div>
     );
   }
@@ -848,7 +788,7 @@ export default function PipelinePage() {
             <div className="mt-2 flex items-center gap-2">
               <span className="text-xs text-zinc-600">Profile:</span>
               <span className="text-xs text-orange-400 font-medium">{creatorName}</span>
-              <button onClick={() => router.push('/')} className="text-xs text-zinc-600 hover:text-zinc-400 underline">Switch</button>
+              {isGuest && <span className="text-xs text-zinc-700">(free run)</span>}
             </div>
           )}
         </div>

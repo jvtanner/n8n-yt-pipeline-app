@@ -2,6 +2,7 @@
 
 import { useState, useEffect, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
+import { useUser } from '@/lib/useUser';
 
 const N8N_BASE = process.env.NEXT_PUBLIC_N8N_WEBHOOK_BASE_URL;
 
@@ -104,54 +105,56 @@ const STEP_SUBTITLES = [
 function SetupPageInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const { user, updateProfile, loading: userLoading } = useUser();
   const [step, setStep] = useState(0);
   const [form, setForm] = useState<FormData>(INITIAL_FORM);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [existingProfiles, setExistingProfiles] = useState<string[]>([]);
-  const [showWizard, setShowWizard] = useState(false);
 
   useEffect(() => {
-    const profiles = JSON.parse(localStorage.getItem('ytPipelineProfiles') || '[]') as string[];
-    setExistingProfiles(profiles);
-    const currentCreator = localStorage.getItem('ytPipelineCreator');
-    if (currentCreator) {
-      const savedProfile = localStorage.getItem('ytPipelineProfile:' + currentCreator);
-      if (savedProfile) {
-        try { setForm(JSON.parse(savedProfile)); } catch {}
+    if (userLoading) return;
+
+    // Load from server profile first, fall back to localStorage
+    if (user?.voiceProfile) {
+      setForm(user.voiceProfile as unknown as FormData);
+    } else if (user?.creatorName) {
+      setForm((prev) => ({ ...prev, creatorName: user.creatorName }));
+    } else {
+      // Fallback: try localStorage (for migration scenarios)
+      const currentCreator = localStorage.getItem('ytPipelineCreator');
+      if (currentCreator) {
+        const savedProfile = localStorage.getItem('ytPipelineProfile:' + currentCreator);
+        if (savedProfile) {
+          try { setForm(JSON.parse(savedProfile)); } catch {}
+        }
       }
     }
-    if (profiles.length === 0 || searchParams.get('mode') === 'form') {
-      setShowWizard(true);
-    }
-  }, []);
+  }, [userLoading, user]);
 
   const updateField = (key: keyof FormData, value: string) => {
     setForm((prev) => ({ ...prev, [key]: value }));
-  };
-
-  const selectExistingProfile = (name: string) => {
-    localStorage.setItem('ytPipelineCreator', name);
-    router.push('/pipeline');
   };
 
   const handleSubmit = async () => {
     setSaving(true);
     setError(null);
     try {
-      const res = await fetch(`${N8N_BASE}/yt-save-voice-profile`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(form),
+      // Save to server (Notion) via user profile API
+      await updateProfile({
+        voiceProfile: form as unknown as import('@/lib/useUser').VoiceProfile,
+        creatorName: form.creatorName,
       });
-      if (!res.ok) throw new Error(`Server returned ${res.status}`);
 
-      // Save to localStorage
-      const profiles = JSON.parse(localStorage.getItem('ytPipelineProfiles') || '[]') as string[];
-      if (!profiles.includes(form.creatorName)) {
-        profiles.push(form.creatorName);
-        localStorage.setItem('ytPipelineProfiles', JSON.stringify(profiles));
+      // Also send to n8n for voice context pipelines
+      if (N8N_BASE) {
+        await fetch(`${N8N_BASE}/yt-save-voice-profile`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(form),
+        }).catch(() => {}); // Non-critical — Notion is source of truth
       }
+
+      // Keep localStorage in sync as cache
       localStorage.setItem('ytPipelineCreator', form.creatorName);
       localStorage.setItem('ytPipelineProfile:' + form.creatorName, JSON.stringify(form));
       router.push('/pipeline');
@@ -161,37 +164,10 @@ function SetupPageInner() {
     }
   };
 
-  // ── Profile Selector ────────────────────────────────────────────────────
-
-  if (!showWizard && existingProfiles.length > 0) {
+  if (userLoading) {
     return (
-      <div className="min-h-screen bg-zinc-950 text-white">
-        <div className="mx-auto max-w-3xl px-6 py-12">
-          <div className="mb-12">
-            <h1 className="text-lg font-semibold tracking-tight text-white">YouTube AI Team</h1>
-            <p className="text-sm text-zinc-600">Select a creator profile</p>
-          </div>
-
-          <div className="flex flex-col gap-3">
-            {existingProfiles.map((name) => (
-              <button
-                key={name}
-                onClick={() => selectExistingProfile(name)}
-                className="flex items-center justify-between rounded-xl border border-zinc-800 bg-zinc-900 px-5 py-4 text-left transition-all hover:border-orange-500/60 hover:bg-zinc-800"
-              >
-                <span className="text-sm font-medium text-white">{name}</span>
-                <span className="text-xs text-zinc-600">Use this profile &rarr;</span>
-              </button>
-            ))}
-          </div>
-
-          <button
-            onClick={() => setShowWizard(true)}
-            className="mt-6 text-sm text-zinc-500 underline hover:text-zinc-300 transition-colors"
-          >
-            + Create new profile
-          </button>
-        </div>
+      <div className="min-h-screen bg-zinc-950 flex items-center justify-center">
+        <div className="h-8 w-8 animate-spin rounded-full border-2 border-zinc-700 border-t-orange-500" />
       </div>
     );
   }
@@ -271,13 +247,13 @@ function SetupPageInner() {
         <div className="mt-8 flex items-center justify-between">
           <button
             onClick={() => {
-              if (step === 0 && existingProfiles.length > 0) {
-                setShowWizard(false);
+              if (step === 0) {
+                router.push('/');
               } else {
                 setStep((s) => s - 1);
               }
             }}
-            className={`text-sm text-zinc-500 hover:text-zinc-300 transition-colors ${step === 0 && existingProfiles.length === 0 ? 'invisible' : ''}`}
+            className="text-sm text-zinc-500 hover:text-zinc-300 transition-colors"
           >
             &larr; Back
           </button>

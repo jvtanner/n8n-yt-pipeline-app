@@ -132,6 +132,8 @@ export default function ThumbnailImageStudio({
   const [generatedImage, setGeneratedImage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [elapsed, setElapsed] = useState(0);
+  const [genCount, setGenCount] = useState(0);
+  const MAX_GENERATIONS = 5;
 
   // Elapsed timer during generation
   useEffect(() => {
@@ -149,7 +151,9 @@ export default function ThumbnailImageStudio({
 
   const startGeneration = useCallback(async () => {
     if (!selectedTemplate || !imageUrl) return;
+    if (genCount >= MAX_GENERATIONS) return;
     setError(null);
+    setGenCount(c => c + 1);
     setSubState('generating');
     try {
       const result = await generateThumbnailImage(
@@ -291,10 +295,10 @@ export default function ThumbnailImageStudio({
             )}
             <button
               onClick={startGeneration}
-              disabled={!imageUrl}
+              disabled={!imageUrl || genCount >= MAX_GENERATIONS}
               className="rounded-lg bg-orange-500 px-6 py-2.5 text-sm font-semibold text-white hover:bg-orange-400 disabled:opacity-30 transition-all"
             >
-              Generate Thumbnail
+              {genCount >= MAX_GENERATIONS ? 'Generation limit reached' : `Generate Thumbnail (${MAX_GENERATIONS - genCount} left)`}
             </button>
           </div>
         </div>
@@ -325,18 +329,24 @@ export default function ThumbnailImageStudio({
           </div>
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <button
-                onClick={() => { setGeneratedImage(null); setSubState('upload'); }}
-                className="text-sm text-zinc-500 hover:text-zinc-300 transition-colors"
-              >
-                Regenerate
-              </button>
-              <button
-                onClick={() => { setGeneratedImage(null); setImageUrl(null); setSubState('template'); }}
-                className="text-sm text-zinc-500 hover:text-zinc-300 transition-colors"
-              >
-                Try different template
-              </button>
+              {genCount < MAX_GENERATIONS ? (
+                <>
+                  <button
+                    onClick={() => { setGeneratedImage(null); setSubState('upload'); }}
+                    className="text-sm text-zinc-500 hover:text-zinc-300 transition-colors"
+                  >
+                    Regenerate
+                  </button>
+                  <button
+                    onClick={() => { setGeneratedImage(null); setImageUrl(null); setSubState('template'); }}
+                    className="text-sm text-zinc-500 hover:text-zinc-300 transition-colors"
+                  >
+                    Try different template
+                  </button>
+                </>
+              ) : (
+                <span className="text-xs text-zinc-600">Generation limit reached</span>
+              )}
             </div>
             <button
               onClick={() => onComplete(generatedImage)}
