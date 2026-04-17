@@ -713,6 +713,58 @@ export default function PipelinePage() {
     setThumbnailStudioOpen(false);
   }, [isGuest, router]);
 
+  // ── Back navigation ──────────────────────────────────────────────────
+  const goBack = useCallback(() => {
+    const backMap: Partial<Record<Stage, Stage>> = {
+      'select-claim': 'script',
+      'select-hook': 'select-claim',
+      'select-intro': 'select-hook',
+      'select-thumbnail': chosenIntro ? 'select-intro' : 'select-hook',
+      'select-title': 'select-thumbnail',
+      'done': 'select-title',
+    };
+
+    const prev = backMap[stage];
+    if (!prev) return false; // No back target (script, loading, saving)
+
+    // Clear data for the stage we're leaving
+    if (stage === 'select-claim') { setClaims([]); setChosenClaim(null); }
+    if (stage === 'select-hook') { setHooks([]); setChosenHook(null); }
+    if (stage === 'select-intro') { setIntros([]); setChosenIntro(null); }
+    if (stage === 'select-thumbnail') { setThumbnailTexts([]); setChosenThumbnail(null); setThumbnailImageUrl(null); }
+    if (stage === 'select-title') { setTitles([]); setChosenTitle(null); }
+    if (stage === 'done') { setNotionUrl(null); setPipelineComplete(null); setDoneEditing(null); setDoneEditText(''); setThumbnailStudioOpen(false); }
+
+    setError(null);
+    setRetryError(null);
+    setRetryPayload(null);
+    setRetryCount(0);
+    setStage(prev);
+    return true;
+  }, [stage, chosenIntro]);
+
+  // Push browser history on each selection stage
+  useEffect(() => {
+    const selectionStages: Stage[] = ['select-claim', 'select-hook', 'select-intro', 'select-thumbnail', 'select-title', 'done'];
+    if (selectionStages.includes(stage)) {
+      window.history.pushState({ stage }, '', '/pipeline');
+    }
+  }, [stage]);
+
+  // Intercept browser back button
+  useEffect(() => {
+    const handlePopState = () => {
+      const went = goBack();
+      if (!went) {
+        // No back target — let browser navigate normally (to dashboard)
+      }
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, [goBack]);
+
+  const canGoBack = ['select-claim', 'select-hook', 'select-intro', 'select-thumbnail', 'select-title', 'done'].includes(stage);
+
   const handleRetry = useCallback(() => {
     if (!retryPayload) return;
     setRetryError(null);
@@ -799,8 +851,23 @@ export default function PipelinePage() {
 
         {/* Header */}
         <div className="mb-12">
-          <h1 className="text-lg font-semibold tracking-tight text-white">YouTube AI Team</h1>
-          <p className="text-sm text-zinc-600">Your AI specialists for claims, hooks, intros, thumbnails, and titles</p>
+          <div className="flex items-center gap-3">
+            {canGoBack && (
+              <button
+                onClick={goBack}
+                className="rounded-lg border border-zinc-800 p-2 text-zinc-500 hover:border-zinc-600 hover:text-zinc-300 transition-all"
+                title="Go back"
+              >
+                <svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M19 12H5" /><path d="M12 19l-7-7 7-7" />
+                </svg>
+              </button>
+            )}
+            <div>
+              <h1 className="text-lg font-semibold tracking-tight text-white">YouTube AI Team</h1>
+              <p className="text-sm text-zinc-600">Your AI specialists for claims, hooks, intros, thumbnails, and titles</p>
+            </div>
+          </div>
           {creatorName && (
             <div className="mt-2 flex items-center gap-2">
               <span className="text-xs text-zinc-600">Profile:</span>
