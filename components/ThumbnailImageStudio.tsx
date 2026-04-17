@@ -5,7 +5,7 @@ import ImageDropZone from './ImageDropZone';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type SubState = 'template' | 'upload' | 'generating' | 'review';
+type SubState = 'template' | 'upload' | 'generating' | 'gen-failed' | 'review';
 
 interface Template {
   id: string;
@@ -80,7 +80,7 @@ function LayoutPreview({ textPosition }: { textPosition: string }) {
 const N8N_BASE = process.env.NEXT_PUBLIC_N8N_WEBHOOK_BASE_URL;
 const WORKFLOW_ID = process.env.NEXT_PUBLIC_WF_THUMBNAIL_IMAGE_GEN || 'nTA0DgdesN7hsoUy';
 
-async function pollForResult(startedAfter: string, timeoutMs = 900000): Promise<Record<string, unknown>> {
+async function pollForResult(startedAfter: string, timeoutMs = 480000): Promise<Record<string, unknown>> {
   const deadline = Date.now() + timeoutMs;
   await new Promise(r => setTimeout(r, 10000));
 
@@ -166,10 +166,15 @@ export default function ThumbnailImageStudio({
       setGeneratedImage(result.imageUrl);
       setSubState('review');
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Generation failed');
-      setSubState('upload');
+      const msg = e instanceof Error ? e.message : 'Generation failed';
+      if (msg.includes('timed out')) {
+        setError('Image generation timed out. The service may be busy — you can retry or skip for now.');
+      } else {
+        setError(msg);
+      }
+      setSubState('gen-failed');
     }
-  }, [selectedTemplate, imageUrl, resolution, creatorName]);
+  }, [selectedTemplate, imageUrl, resolution, creatorName, genCount]);
 
   return (
     <div>
@@ -196,12 +201,14 @@ export default function ThumbnailImageStudio({
           {subState === 'template' && 'Choose a layout template'}
           {subState === 'upload' && 'Add your image'}
           {subState === 'generating' && 'Generating thumbnail...'}
+          {subState === 'gen-failed' && 'Generation failed'}
           {subState === 'review' && 'Your generated thumbnail'}
         </h2>
         <p className="text-sm text-zinc-500 mt-1">
           {subState === 'template' && 'Pick where you want the subject and text to go.'}
           {subState === 'upload' && 'Drop in a photo or paste a URL from Pinterest, Google, etc.'}
           {subState === 'generating' && 'Your thumbnail is generating. This can take several minutes.'}
+          {subState === 'gen-failed' && 'The image service may be busy. Your image and template are preserved.'}
           {subState === 'review' && 'Review the result. Use it, regenerate, or try a different template.'}
         </p>
       </div>
@@ -313,6 +320,41 @@ export default function ThumbnailImageStudio({
               <div className="h-10 w-10 animate-spin rounded-full border-2 border-zinc-700 border-t-orange-500" />
               <p className="text-sm text-zinc-500">{elapsed}s elapsed</p>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Generation Failed ── */}
+      {subState === 'gen-failed' && (
+        <div className="space-y-4">
+          {error && (
+            <div className="rounded-lg bg-red-950/50 border border-red-900/50 px-4 py-3 text-sm text-red-400">
+              {error}
+            </div>
+          )}
+          <div className="flex items-center gap-3">
+            {genCount < MAX_GENERATIONS && (
+              <button
+                onClick={() => { setError(null); startGeneration(); }}
+                className="rounded-lg bg-orange-500 px-6 py-2.5 text-sm font-semibold text-white hover:bg-orange-400 transition-all"
+              >
+                Try again ({MAX_GENERATIONS - genCount} left)
+              </button>
+            )}
+            <button
+              onClick={() => { setError(null); setSubState('upload'); }}
+              className="text-sm text-zinc-500 hover:text-zinc-300 transition-colors"
+            >
+              Change image
+            </button>
+            {onSkip && (
+              <button
+                onClick={onSkip}
+                className="text-sm text-zinc-500 hover:text-zinc-300 transition-colors"
+              >
+                Skip for now
+              </button>
+            )}
           </div>
         </div>
       )}
