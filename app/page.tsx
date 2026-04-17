@@ -29,7 +29,7 @@ const ERROR_MESSAGES: Record<string, string> = {
 function HomeContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { user, loading, isGuest, logout } = useUser();
+  const { user, loading, isGuest, logout, updateProfile } = useUser();
 
   const [emailInput, setEmailInput] = useState('');
   const [sendStatus, setSendStatus] = useState<'idle' | 'sending' | 'sent' | 'not_found'>('idle');
@@ -65,15 +65,15 @@ function HomeContent() {
 
       if (Object.keys(updates).length > 0) {
         try {
-          await fetch('/api/user/profile', {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(updates),
-          });
-        } catch {}
+          await updateProfile(updates as Partial<import('@/lib/useUser').UserProfile>);
+          localStorage.setItem('ytPipelineMigrated', 'true');
+        } catch {
+          // Don't set flag — retry on next login
+          return;
+        }
+      } else {
+        localStorage.setItem('ytPipelineMigrated', 'true');
       }
-
-      localStorage.setItem('ytPipelineMigrated', 'true');
     };
 
     migrate();
