@@ -40,7 +40,7 @@ function HomeContent() {
 
   // localStorage migration on first authenticated login
   useEffect(() => {
-    if (!user || localStorage.getItem('ytPipelineMigrated') === 'true') return;
+    if (!user || localStorage.getItem('ytPipelineMigrated') === 'v2') return;
 
     const migrate = async () => {
       const updates: Record<string, unknown> = {};
@@ -66,13 +66,13 @@ function HomeContent() {
       if (Object.keys(updates).length > 0) {
         try {
           await updateProfile(updates as Partial<import('@/lib/useUser').UserProfile>);
-          localStorage.setItem('ytPipelineMigrated', 'true');
+          localStorage.setItem('ytPipelineMigrated', 'v2');
         } catch {
           // Don't set flag — retry on next login
           return;
         }
       } else {
-        localStorage.setItem('ytPipelineMigrated', 'true');
+        localStorage.setItem('ytPipelineMigrated', 'v2');
       }
     };
 
