@@ -103,7 +103,8 @@ function HomeContent() {
     };
 
     migrate();
-  }, [user]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user, updateProfile]);
 
   const handleSendLink = async () => {
     if (!emailInput.trim()) return;

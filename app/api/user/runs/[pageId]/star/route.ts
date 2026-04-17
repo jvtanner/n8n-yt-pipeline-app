@@ -19,6 +19,11 @@ export async function PUT(
       return NextResponse.json({ error: 'Run not found' }, { status: 404 });
     }
 
+    // Ownership check — only the run's author can star items
+    if (run.email.toLowerCase() !== email.toLowerCase()) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    }
+
     const body = await req.json();
     const { action, item } = body as {
       action: 'add' | 'remove';

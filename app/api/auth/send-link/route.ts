@@ -31,11 +31,19 @@ export async function POST(req: Request) {
     const loginUrl = `${baseUrl}/api/auth/verify?token=${token}`;
 
     // Trigger n8n magic link email
-    await fetch(`${N8N_WEBHOOK_BASE}/yt-magic-link`, {
+    const emailRes = await fetch(`${N8N_WEBHOOK_BASE}/yt-magic-link`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email: normalized, token, loginUrl }),
     });
+
+    if (!emailRes.ok) {
+      console.error('Magic link email failed:', emailRes.status);
+      return NextResponse.json(
+        { status: 'error', message: 'Failed to send email. Please try again.' },
+        { status: 502 },
+      );
+    }
 
     return NextResponse.json({ status: 'sent' });
   } catch (err) {
