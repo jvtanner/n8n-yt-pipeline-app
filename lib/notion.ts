@@ -42,6 +42,15 @@ function extractRichText(prop: { rich_text?: { plain_text: string }[] }): string
   return prop.rich_text?.map((t) => t.plain_text).join('') ?? '';
 }
 
+function chunkRichText(text: string, maxLen = 2000): { text: { content: string } }[] {
+  if (!text) return [{ text: { content: '' } }];
+  const chunks: { text: { content: string } }[] = [];
+  for (let i = 0; i < text.length; i += maxLen) {
+    chunks.push({ text: { content: text.slice(i, i + maxLen) } });
+  }
+  return chunks;
+}
+
 function extractTitle(prop: { title?: { plain_text: string }[] }): string {
   return prop.title?.map((t) => t.plain_text).join('') ?? '';
 }
@@ -103,10 +112,10 @@ export async function updateUser(
     properties['Creator Name'] = { rich_text: [{ text: { content: updates.creatorName } }] };
   }
   if (updates.voiceProfile !== undefined) {
-    properties['Voice Profile'] = { rich_text: [{ text: { content: updates.voiceProfile } }] };
+    properties['Voice Profile'] = { rich_text: chunkRichText(updates.voiceProfile) };
   }
   if (updates.ideaBank !== undefined) {
-    properties['Idea Bank'] = { rich_text: [{ text: { content: updates.ideaBank } }] };
+    properties['Idea Bank'] = { rich_text: chunkRichText(updates.ideaBank) };
   }
   if (updates.youtubeChannelId !== undefined) {
     properties['YouTube Channel ID'] = { rich_text: [{ text: { content: updates.youtubeChannelId } }] };
