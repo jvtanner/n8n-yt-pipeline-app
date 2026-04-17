@@ -219,6 +219,94 @@ export async function findAuthToken(token: string): Promise<AuthToken | null> {
   };
 }
 
+// ── Pipeline run queries (ChatGPT Notion DB) ────────────────────────────
+
+function getContentDbId(): string {
+  const id = process.env.NOTION_CONTENT_DB_ID;
+  if (!id) throw new Error('NOTION_CONTENT_DB_ID not configured');
+  return id;
+}
+
+export interface PipelineRunRecord {
+  pageId: string;
+  name: string;
+  rawIdea: string;
+  status: string;
+  lane: string;
+  chosenClaim: string;
+  chosenHook: string;
+  chosenIntro: string;
+  chosenThumbnailText: string;
+  chosenTitle: string;
+  starredItems: string;
+  createdAt: string;
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function pageToRun(page: any): PipelineRunRecord {
+  const p = page.properties;
+  return {
+    pageId: page.id,
+    name: extractTitle(p['Name']),
+    rawIdea: extractRichText(p['Raw Idea']),
+    status: p['Status']?.select?.name ?? '',
+    lane: p['Lane']?.select?.name ?? '',
+    chosenClaim: extractRichText(p['Chosen Claim']),
+    chosenHook: extractRichText(p['Chosen Hook']),
+    chosenIntro: extractRichText(p['Chosen Intro']),
+    chosenThumbnailText: extractRichText(p['Chosen Thumbnail Text']),
+    chosenTitle: extractRichText(p['Chosen Title']),
+    starredItems: extractRichText(p['Starred Items']),
+    createdAt: page.created_time ?? '',
+  };
+}
+
+export async function queryRunsByCreator(creatorName: string, limit = 50): Promise<PipelineRunRecord[]> {
+  const res = await fetch(`${NOTION_API}/databases/${getContentDbId()}/query`, {
+    method: 'POST',
+    headers: getHeaders(),
+    body: JSON.stringify({
+      filter: {
+        property: 'Name',
+        title: { contains: creatorName },
+      },
+      sorts: [{ timestamp: 'created_time', direction: 'descending' }],
+      page_size: Math.min(limit, 100),
+    }),
+  });
+
+  if (!res.ok) throw new Error(`Notion query runs failed: ${res.status}`);
+  const data = await res.json();
+  return (data.results ?? []).map(pageToRun);
+}
+
+export async function updateRunStarredItems(pageId: string, starredItems: string): Promise<void> {
+  const res = await fetch(`${NOTION_API}/pages/${pageId}`, {
+    method: 'PATCH',
+    headers: getHeaders(),
+    body: JSON.stringify({
+      properties: {
+        'Starred Items': { rich_text: chunkRichText(starredItems) },
+      },
+    }),
+  });
+
+  if (!res.ok) throw new Error(`Notion update starred failed: ${res.status}`);
+}
+
+export async function getRunById(pageId: string): Promise<PipelineRunRecord | null> {
+  const res = await fetch(`${NOTION_API}/pages/${pageId}`, {
+    method: 'GET',
+    headers: getHeaders(),
+  });
+
+  if (!res.ok) return null;
+  const page = await res.json();
+  return pageToRun(page);
+}
+
+// ── Auth token queries ────────────────────────────────────────────────────
+
 export async function markTokenUsed(pageId: string): Promise<void> {
   const res = await fetch(`${NOTION_API}/pages/${pageId}`, {
     method: 'PATCH',

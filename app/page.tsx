@@ -35,6 +35,32 @@ function HomeContent() {
   const [sendStatus, setSendStatus] = useState<'idle' | 'sending' | 'sent' | 'not_found'>('idle');
   const [sendError, setSendError] = useState<string | null>(null);
 
+  // Server-side history and bookmarks for authenticated users
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const [serverRuns, setServerRuns] = useState<any[] | null>(null);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const [serverBookmarks, setServerBookmarks] = useState<any[] | null>(null);
+  const [runsLoading, setRunsLoading] = useState(false);
+  const [bookmarksLoading, setBookmarksLoading] = useState(false);
+
+  useEffect(() => {
+    if (!user || isGuest) return;
+
+    setRunsLoading(true);
+    fetch('/api/user/runs')
+      .then((r) => r.ok ? r.json() : null)
+      .then((data) => { if (data?.runs) setServerRuns(data.runs); })
+      .catch(() => {})
+      .finally(() => setRunsLoading(false));
+
+    setBookmarksLoading(true);
+    fetch('/api/user/bookmarks')
+      .then((r) => r.ok ? r.json() : null)
+      .then((data) => { if (data?.bookmarks) setServerBookmarks(data.bookmarks); })
+      .catch(() => {})
+      .finally(() => setBookmarksLoading(false));
+  }, [user, isGuest]);
+
   const errorParam = searchParams.get('error');
   const errorMessage = errorParam ? ERROR_MESSAGES[errorParam] || ERROR_MESSAGES.server : null;
 
@@ -195,10 +221,23 @@ function HomeContent() {
           <AnalyticsDashboard creatorName={user.creatorName || user.email} />
 
           {/* History */}
-          <PipelineHistory />
+          <PipelineHistory serverRuns={serverRuns} loading={runsLoading} />
 
           {/* Idea Bank */}
-          <IdeaBankSection />
+          <IdeaBankSection
+            serverBookmarks={serverBookmarks}
+            loading={bookmarksLoading}
+            onDelete={async (bookmark) => {
+              try {
+                await fetch(`/api/user/runs/${bookmark.runPageId}/star`, {
+                  method: 'PUT',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ action: 'remove', item: { type: bookmark.type, text: bookmark.text } }),
+                });
+                setServerBookmarks((prev) => prev?.filter((b) => b.id !== bookmark.id) ?? null);
+              } catch {}
+            }}
+          />
 
         </div>
       </div>
